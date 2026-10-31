@@ -4,6 +4,8 @@ on:
   push:
     paths-ignore:
       - 'README.md'
+      - 'integration_test/**'
+      - '.github/workflows/screens.yml'
   workflow_dispatch:
 
 permissions:

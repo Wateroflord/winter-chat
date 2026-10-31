@@ -1,0 +1,99 @@
+name: UI test on Linux
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  ui:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: 'stable'
+          cache: false
+      - name: Build server
+        working-directory: server
+        run: |
+          go mod tidy
+          CGO_ENABLED=0 go build -o out/winter-chat-server .
+          names=$(gh release view -R livekit/livekit --json assets -q '.assets[].name')
+          lin=$(echo "$names" | grep -E 'linux_amd64\.tar\.gz$' | head -1)
+          gh release download -R livekit/livekit -p "$lin" -D /tmp/lk
+          tar -xzf "/tmp/lk/$lin" -C /tmp/lk
+          cp "$(find /tmp/lk -type f -name livekit-server | head -1)" out/livekit-server
+          chmod +x out/*
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Linux tools, virtual screen and sound
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q ninja-build libgtk-3-dev clang cmake pkg-config liblzma-dev libstdc++-12-dev libpulse-dev libasound2-dev xvfb pulseaudio jq zenity
+          pulseaudio -D --exit-idle-time=-1 || true
+          pactl load-module module-null-sink sink_name=dummy || true
+          pactl set-default-source dummy.monitor || true
+      - name: Start server and Bob
+        run: |
+          cd server/out
+          ./winter-chat-server --no-browser > server.log 2>&1 &
+          B=http://127.0.0.1:8090
+          for i in $(seq 1 60); do curl -sf $B/api/wc/info >/dev/null && break; sleep 1; done
+          for i in $(seq 1 30); do curl -sf $B/api/wc/info | jq -e .calls >/dev/null && break; sleep 1; done
+          INVITE=$(jq -r .inviteCode winter-chat-data/server.json)
+          echo "INVITE=$INVITE" >> "$GITHUB_ENV"
+          curl -s -X POST $B/api/collections/users/records -H 'Content-Type: application/json' \
+            -d "{\"username\":\"bob\",\"name\":\"Боб\",\"password\":\"password123\",\"passwordConfirm\":\"password123\",\"invite\":\"$INVITE\"}" | jq -c .
+          TB=$(curl -s -X POST $B/api/collections/users/auth-with-password -H 'Content-Type: application/json' -d '{"identity":"bob","password":"password123"}' | jq -r .token)
+          # Боб отвечает, когда Алиса напишет первое сообщение.
+          nohup bash -c "
+            for i in \$(seq 1 900); do
+              CH=\$(curl -s '$B/api/collections/chats/records' -H 'Authorization: $TB' | jq -r '.items[0].id // empty')
+              if [ -n \"\$CH\" ]; then
+                n=\$(curl -s -G '$B/api/collections/messages/records' --data-urlencode \"filter=chat='\$CH'\" -H 'Authorization: $TB' | jq '.items|length')
+                if [ \"\$n\" -ge 1 ]; then
+                  sleep 2
+                  curl -s -X POST '$B/api/collections/messages/records' -H 'Authorization: $TB' -F \"chat=\$CH\" -F 'text=Привет, Алиса!' > bob.txt
+                  exit 0
+                fi
+              fi
+              sleep 1
+            done" > bob.log 2>&1 &
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - name: Run UI test
+        run: |
+          flutter create --project-name winter_chat --org com.winterhub --platforms linux .
+          rm -rf test
+          python3 tools/patch_linux.py
+          flutter pub get
+          set +e
+          xvfb-run -a -s "-screen 0 1280x900x24" flutter test integration_test/app_test.dart -d linux \
+            --dart-define=SERVER=127.0.0.1:8090 --dart-define=INVITE=$INVITE --dart-define=SHOTS=$PWD/shots > drive.txt 2>&1
+          code=$?
+          tail -80 drive.txt
+          if [ $code -ne 0 ]; then
+            { echo "exit=$code"; grep -v '^::' drive.txt | grep -iE "Не дождался|Expected|Actual|EXCEPTION|Error|error:|failed|SHOT|Which:" | head -60; echo '--- server.log'; tail -20 server/out/server.log; } > ui_fail.txt
+            python3 tools/annotate.py ui_fail.txt go
+          fi
+          echo $code > ui_code.txt
+      - name: Save screenshots to branch
+        if: always()
+        run: |
+          mkdir -p out
+          cp -r shots out/ 2>/dev/null || true
+          cp drive.txt ui_code.txt out/ 2>/dev/null || true
+          cp server/out/server.log server/out/bob.log out/ 2>/dev/null || true
+          git config user.name "winter-chat-bot"
+          git config user.email "actions@users.noreply.github.com"
+          git checkout --orphan screens-out
+          git rm -rf --cached . > /dev/null
+          git add -f out
+          git commit -m "ui test" > /dev/null
+          git push -f origin screens-out
+          exit $(cat ui_code.txt 2>/dev/null || echo 1)
