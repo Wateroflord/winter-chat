@@ -1,0 +1,17 @@
+port: 7880
+bind_addresses:
+  - 127.0.0.1
+rtc:
+  tcp_port: 7881
+  udp_port: 7882
+  use_external_ip: false
+  node_ip: 130.131.247.160
+  advertise_internal_ip: true
+keys:
+  WCNKLVZTRWBRM4: mB82CBmDspUh6e3RRLuMpBxQkT5rC9zRnT5bRH2Z5XEjgf3m
+room:
+  auto_create: true
+  empty_timeout: 60
+  departure_timeout: 10
+logging:
+  level: debug

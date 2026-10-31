@@ -1,0 +1,35 @@
+
+Building Linux application...                                   
+download: https://github.com/webrtc-sdk/libwebrtc/releases/download/libwebrtc.m150.7871.07/libwebrtc-linux-x64-release.zip
+✓ Built build/linux/x64/debug/bundle/winter_chat
+LK INFO Connectivity changed, [ConnectivityResult.other] => [ConnectivityResult.other]
+LK INFO ping config timeout: 15, interval: 5 
+LK WARNING Unknown DC label: _data_track
+LK INFO connection setup took 657 ms
+LK INFO [Preconnect audio] reset
+LK INFO [Preconnect audio] reset
+LK INFO [Preconnect audio] reset
+LK INFO [Preconnect audio] disposed
+LK WARNING failed to emit event LocalTrackUnpublishedEvent(participant: LocalParticipant(sid: PA_k8xZPfXJmFot, identity: 0sdrh2r03tuggrd), publication: LocalTrackPublication<LocalAudioTrack>(sid: TR_AMKxewtExzFiDB, source: TrackSource.microphone)) on a disposed emitter
+LK WARNING failed to emit event LocalTrackUnpublishedEvent(participant: LocalParticipant(sid: PA_k8xZPfXJmFot, identity: 0sdrh2r03tuggrd), publication: LocalTrackPublication<LocalAudioTrack>(sid: TR_AMKxewtExzFiDB, source: TrackSource.microphone)) on a disposed emitter
+LK INFO [Preconnect audio] reset
+LK WARNING failed to emit event RoomDisconnectedEvent(reason: DisconnectReason.clientInitiated) on a disposed emitter
+LK WARNING called notifyListeners() on a disposed ChangeNotifier
+LK WARNING called removeListener() on a disposed ChangeNotifier
+::group::✅ регистрация, чат, сообщение, звонок
+SHOT 01_login
+SHOT 02_register
+SHOT 03_home_empty
+SHOT 04_new_chat
+SHOT 05_chat
+SHOT 06_call
+Got exception closing data channel on RTCPeerConnection::dispose: PlatformException(dataChannelCloseFailed, dataChannelClose() peerConnection is null, null, null)
+Got exception closing data channel on RTCPeerConnection::dispose: PlatformException(dataChannelCloseFailed, dataChannelClose() peerConnection is null, null, null)
+Got exception closing data channel on RTCPeerConnection::dispose: PlatformException(dataChannelCloseFailed, dataChannelClose() peerConnection is null, null, null)
+Got exception closing data channel on RTCPeerConnection::dispose: PlatformException(dataChannelCloseFailed, dataChannelClose() peerConnection is null, null, null)
+Got exception closing data channel on RTCPeerConnection::dispose: PlatformException(dataChannelCloseFailed, dataChannelClose() peerConnection is null, null, null)
+SHOT 07_after_call
+ALL UI CHECKS PASSED
+::endgroup::
+
+🎉 1 test passed.
