@@ -172,7 +172,6 @@ func registerHooks(app core.App) {
 		if name == "" {
 			e.Record.Set("name", e.Record.GetString("username"))
 		}
-		e.Record.SetVerified(true)
 		e.Record.SetEmailVisibility(false)
 		return e.Next()
 	})
