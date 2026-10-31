@@ -7,7 +7,6 @@ import (
 
 	validation "github.com/pocketbase/ozzo-validation/v4"
 
-	"github.com/pocketbase/dbx"
 	"github.com/pocketbase/pocketbase/core"
 	"github.com/pocketbase/pocketbase/tools/types"
 )
@@ -196,9 +195,15 @@ func registerHooks(app core.App) {
 			if other == e.Auth.Id {
 				other = members[1]
 			}
-			existing, _ := e.App.FindFirstRecordByFilter("chats",
-				"is_group = false && members.id ?= {:a} && members.id ?= {:b}",
-				dbx.Params{"a": e.Auth.Id, "b": other})
+			var existing *core.Record
+			cands, _ := e.App.FindRecordsByFilter("chats", "is_group = false", "", 0, 0)
+			for _, c := range cands {
+				m := c.GetStringSlice("members")
+				if len(m) == 2 && contains(m, e.Auth.Id) && contains(m, other) {
+					existing = c
+					break
+				}
+			}
 			if existing != nil {
 				return e.BadRequestError("Чат уже есть", map[string]validation.Error{
 					"existing": validation.NewError(existing.Id, "chat exists"),
