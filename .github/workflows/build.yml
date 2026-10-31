@@ -1,0 +1,207 @@
+name: Build Winter Chat
+
+on:
+  push:
+    paths-ignore:
+      - 'README.md'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  server:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: 'stable'
+          cache: false
+      - name: Build server (Linux + Windows)
+        working-directory: server
+        run: |
+          set -o pipefail
+          go version
+          go mod tidy > ../go.txt 2>&1 || { cat ../go.txt; python3 ../tools/annotate.py ../go.txt go; exit 1; }
+          VER=1.0.${{ github.run_number }}
+          GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -trimpath -ldflags "-s -w -X main.Version=$VER" -o out/linux/winter-chat-server . > ../go.txt 2>&1 || { cat ../go.txt; python3 ../tools/annotate.py ../go.txt go; exit 1; }
+          GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -trimpath -ldflags "-s -w -X main.Version=$VER" -o out/windows/winter-chat-server.exe . > ../go.txt 2>&1 || { cat ../go.txt; python3 ../tools/annotate.py ../go.txt go; exit 1; }
+          go vet . || true
+          ls -la out/*
+      - name: Download LiveKit server
+        run: |
+          names=$(gh release view -R livekit/livekit --json assets -q '.assets[].name')
+          echo "$names"
+          lin=$(echo "$names" | grep -E 'linux_amd64\.tar\.gz$' | head -1)
+          win=$(echo "$names" | grep -E 'windows_amd64\.zip$' | head -1)
+          echo "linux: $lin  windows: $win"
+          [ -n "$lin" ] || { echo "::error title=livekit::нет сборки LiveKit для Linux: $names"; exit 1; }
+          mkdir -p lk/linux lk/windows
+          gh release download -R livekit/livekit -p "$lin" -D lk
+          tar -xzf "lk/$lin" -C lk/linux
+          cp "$(find lk/linux -type f -name 'livekit-server' | head -1)" server/out/linux/livekit-server
+          chmod +x server/out/linux/*
+          if [ -n "$win" ]; then
+            gh release download -R livekit/livekit -p "$win" -D lk
+            unzip -q "lk/$win" -d lk/windows
+            cp "$(find lk/windows -type f -iname 'livekit-server.exe' | head -1)" server/out/windows/livekit-server.exe
+          else
+            echo "::warning title=livekit::нет сборки LiveKit для Windows — собираю из исходников"
+            tag=$(gh release view -R livekit/livekit --json tagName -q .tagName)
+            git clone -q --depth 1 -b "$tag" https://github.com/livekit/livekit lk/src
+            (cd lk/src && GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -trimpath -ldflags "-s -w" -o ../../server/out/windows/livekit-server.exe ./cmd/server)
+          fi
+          lic=$(find lk -maxdepth 3 -iname 'LICENSE*' | head -1)
+          [ -n "$lic" ] && cp "$lic" server/out/linux/LiveKit-LICENSE.txt && cp "$lic" server/out/windows/LiveKit-LICENSE.txt || true
+          ls -la server/out/*
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Smoke test (регистрация, чаты, файлы, звонки)
+        run: |
+          bash server/smoke_test.sh "$PWD/server/out/linux" 2>&1 | tee smoke.txt
+          exit ${PIPESTATUS[0]}
+      - name: Package
+        run: |
+          rm -rf server/out/linux/winter-chat-data server/out/linux/server.log
+          mkdir -p dist "pkg/Winter Chat Server" pkg/winter-chat-server
+          cp server/out/windows/* "pkg/Winter Chat Server/"
+          cp server/package/windows/* "pkg/Winter Chat Server/"
+          (cd pkg && zip -qr ../dist/Winter-Chat-Server-Windows.zip "Winter Chat Server")
+          cp server/out/linux/* pkg/winter-chat-server/
+          cp server/package/linux/* pkg/winter-chat-server/
+          chmod +x pkg/winter-chat-server/*.sh pkg/winter-chat-server/winter-chat-server pkg/winter-chat-server/livekit-server
+          tar -czf dist/Winter-Chat-Server-Linux.tar.gz -C pkg winter-chat-server
+          ls -la dist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: server
+          path: dist/*
+
+  android:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - name: Create Android project
+        run: |
+          flutter create --project-name winter_chat --org com.winterhub --platforms android .
+          rm -rf test
+          python3 tools/patch_android.py
+          mkdir -p ~/.android
+          cp tools/debug.keystore ~/.android/debug.keystore
+          flutter pub get
+          dart run flutter_launcher_icons || true
+      - name: Analyze
+        run: |
+          flutter analyze --no-fatal-infos --no-fatal-warnings > analyze.txt 2>&1 || true
+          cat analyze.txt
+          python3 tools/annotate.py analyze.txt "analyze"
+      - name: Build APK
+        run: |
+          set -o pipefail
+          flutter build apk --release --target-platform android-arm64 --dart-define=BUILD=${{ github.run_number }} --build-number=${{ github.run_number }} --build-name=1.0.${{ github.run_number }} 2>&1 | tee build.txt || { python3 tools/annotate.py build.txt "build"; exit 1; }
+          mkdir -p dist && cp build/app/outputs/flutter-apk/app-release.apk dist/Winter-Chat.apk
+      - uses: actions/upload-artifact@v4
+        with:
+          name: android
+          path: dist/*
+
+  release:
+    needs: [server, android]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Create release
+        run: |
+          ls -la dist
+          gh release create "build-${{ github.run_number }}" dist/* -R "${{ github.repository }}" \
+            --title "Winter Chat, сборка ${{ github.run_number }}" \
+            --notes "**Приложение:** телефон — Winter-Chat.apk, Windows — Winter-Chat-Setup.exe, Linux — Winter-Chat-Linux.tar.gz (установщики для ПК появятся через несколько минут). Удобнее ставить через Winter Hub.
+
+          **Сервер для ноутбука:** Winter-Chat-Server-Windows.zip или Winter-Chat-Server-Linux.tar.gz — распакуй и запусти, внутри есть инструкция." \
+            --latest
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  windows:
+    needs: release
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - name: Create Windows project
+        shell: bash
+        run: |
+          flutter create --project-name winter_chat --org com.winterhub --platforms windows .
+          rm -rf test
+          python tools/patch_windows.py
+          flutter pub get
+          dart run flutter_launcher_icons -f icons_windows.yaml || true
+      - name: Build Windows app
+        shell: bash
+        run: |
+          set -o pipefail
+          flutter build windows --release --dart-define=BUILD=${{ github.run_number }} --build-number=${{ github.run_number }} --build-name=1.0.${{ github.run_number }} 2>&1 | tee build.txt || { python3 tools/annotate.py build.txt "windows"; exit 1; }
+      - name: Build installer
+        shell: pwsh
+        env:
+          BUILD_NO: ${{ github.run_number }}
+        run: |
+          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $iscc)) { choco install innosetup -y --no-progress | Out-Null }
+          & $iscc tools\installer.iss
+          if ($LASTEXITCODE -ne 0) { echo "::error title=installer::Inno Setup failed"; exit 1 }
+      - name: Attach to the release
+        shell: pwsh
+        run: |
+          gh release upload "build-${{ github.run_number }}" dist/Winter-Chat-Setup.exe --clobber
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  linux:
+    needs: release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Linux build tools
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q ninja-build libgtk-3-dev clang cmake pkg-config liblzma-dev libstdc++-12-dev libpulse-dev libasound2-dev
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - name: Create Linux project
+        run: |
+          flutter create --project-name winter_chat --org com.winterhub --platforms linux .
+          rm -rf test
+          python3 tools/patch_linux.py
+          flutter pub get
+      - name: Build Linux app
+        run: |
+          set -o pipefail
+          flutter build linux --release --dart-define=BUILD=${{ github.run_number }} --build-number=${{ github.run_number }} --build-name=1.0.${{ github.run_number }} 2>&1 | tee build.txt || { python3 tools/annotate.py build.txt "linux"; exit 1; }
+      - name: Package and attach
+        run: |
+          mkdir -p pkg/winter-chat
+          cp -r build/linux/x64/release/bundle pkg/winter-chat/bundle
+          cp tools/linux/install.sh pkg/winter-chat/
+          chmod +x pkg/winter-chat/install.sh pkg/winter-chat/bundle/winter_chat
+          tar -czf Winter-Chat-Linux.tar.gz -C pkg winter-chat
+          gh release upload "build-${{ github.run_number }}" Winter-Chat-Linux.tar.gz --clobber
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

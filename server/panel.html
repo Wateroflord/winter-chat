@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Winter Chat Server</title>
+<style>
+  :root { --bg:#0A1020; --s1:#111A2E; --s2:#17223A; --b:#24324F; --t:#EAF2FF; --m:#8A9BB8; --ice:#7FD8FF; --good:#5EE6A8; --warn:#FFC46B; --bad:#FF6B8A; }
+  * { box-sizing: border-box; }
+  body { margin:0; background: radial-gradient(1200px 600px at 20% -10%, #16264a 0%, var(--bg) 55%); color:var(--t); font: 15px/1.45 "Segoe UI", system-ui, sans-serif; min-height:100vh; }
+  .wrap { max-width: 920px; margin: 0 auto; padding: 32px 20px 60px; }
+  h1 { font-size: 28px; margin: 0 0 4px; letter-spacing: -.5px; }
+  h1 span { color: var(--ice); }
+  .sub { color: var(--m); margin-bottom: 24px; }
+  .grid { display:grid; grid-template-columns: repeat(auto-fit, minmax(260px,1fr)); gap: 14px; }
+  .card { background: var(--s1); border:1px solid var(--b); border-radius: 16px; padding: 18px; }
+  .card h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 1px; color: var(--m); margin: 0 0 10px; font-weight: 600; }
+  .big { font-size: 26px; font-weight: 800; letter-spacing: 1px; color: var(--ice); font-family: Consolas, monospace; }
+  .row { display:flex; align-items:center; justify-content:space-between; gap:10px; padding: 7px 0; border-top: 1px solid var(--b); }
+  .row:first-of-type { border-top: 0; }
+  .mono { font-family: Consolas, monospace; }
+  .muted { color: var(--m); font-size: 13px; }
+  .ok { color: var(--good); } .warn { color: var(--warn); } .bad { color: var(--bad); }
+  button { background: var(--s2); color: var(--t); border:1px solid var(--b); border-radius: 10px; padding: 6px 12px; cursor: pointer; font: inherit; font-size: 13px; }
+  button:hover { border-color: var(--ice); }
+  .copy { margin-left: 6px; }
+  .full { grid-column: 1 / -1; }
+  table { width:100%; border-collapse: collapse; }
+  td, th { text-align:left; padding: 7px 6px; border-top: 1px solid var(--b); font-size: 14px; }
+  th { color: var(--m); font-weight: 600; font-size: 12px; text-transform: uppercase; border-top: 0; }
+  ol { margin: 6px 0 0; padding-left: 20px; } li { margin: 4px 0; }
+  a { color: var(--ice); }
+  .dot { display:inline-block; width:10px; height:10px; border-radius:50%; margin-right:6px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>❄ Winter <span>Chat</span> Server</h1>
+  <div class="sub" id="sub">Загрузка…</div>
+
+  <div class="grid">
+    <div class="card">
+      <h2>Состояние</h2>
+      <div class="row"><span>Чаты и файлы</span><b class="ok"><span class="dot" style="background:var(--good)"></span>работают</b></div>
+      <div class="row"><span>Звонки</span><b id="calls">…</b></div>
+      <div class="muted" id="callsErr"></div>
+      <div class="row"><span>Пользователей</span><b id="nUsers">0</b></div>
+      <div class="row"><span>Чатов / сообщений</span><b id="nChats">0</b></div>
+    </div>
+
+    <div class="card">
+      <h2>Код приглашения</h2>
+      <div class="big" id="invite">…</div>
+      <div class="muted" style="margin:8px 0 12px">Друзья вводят его при регистрации. Без кода зарегистрироваться нельзя.</div>
+      <button onclick="copy(state.invite)">Скопировать</button>
+      <button onclick="newInvite()">Новый код</button>
+    </div>
+
+    <div class="card full">
+      <h2>Адрес сервера для приложения</h2>
+      <div id="addrs"></div>
+      <div class="muted" style="margin-top:10px">Друзья вводят адрес на экране входа в Winter Chat. Если вы в одной сети (один Wi-Fi) — подходит адрес домашней сети.</div>
+    </div>
+
+    <div class="card full">
+      <h2>Как подключить друзей через интернет</h2>
+      <ol>
+        <li>Зайди в настройки роутера и открой (пробрось) порты на этот компьютер (<span class="mono" id="lanMain">—</span>):
+          <table style="margin:8px 0"><thead><tr><th>Порт</th><th>Протокол</th><th>Для чего</th></tr></thead><tbody id="ports"></tbody></table>
+        </li>
+        <li>Если Windows спросит про брандмауэр для Winter Chat Server и livekit-server — нажми «Разрешить».</li>
+        <li>Дай друзьям адрес <b class="mono" id="pubAddr">—</b> и код приглашения.</li>
+        <li>Если у провайдера нет «белого» IP, поставь всем бесплатный VPN (Tailscale, ZeroTier или Radmin VPN) — его адрес появится в списке выше.</li>
+      </ol>
+    </div>
+
+    <div class="card full">
+      <h2>Пользователи</h2>
+      <table><thead><tr><th>Логин</th><th>Имя</th><th>Зарегистрирован</th><th></th></tr></thead><tbody id="users"></tbody></table>
+      <div class="muted" id="noUsers" style="margin-top:6px"></div>
+    </div>
+
+    <div class="card full">
+      <h2>Для продвинутых</h2>
+      <div class="row"><span>Админка базы</span><a href="/_/" target="_blank">открыть</a></div>
+      <div class="row"><span>Логин админки</span><span class="mono" id="aEmail"></span></div>
+      <div class="row"><span>Пароль админки</span><span class="mono" id="aPass"></span></div>
+      <div class="row"><span>Папка с данными</span><span class="mono muted" id="dataDir"></span></div>
+      <div class="muted" style="margin-top:8px">Чтобы сделать резервную копию — скопируй папку с данными, когда сервер выключен.</div>
+    </div>
+  </div>
+</div>
+<script>
+let state = {};
+const $ = (id) => document.getElementById(id);
+function esc(s) { return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function copy(t) { navigator.clipboard?.writeText(t); }
+async function load() {
+  try {
+    const r = await fetch('/api/wc/panel'); state = await r.json();
+  } catch (e) { $('sub').textContent = 'Сервер не отвечает'; return; }
+  const s = state;
+  $('sub').textContent = 'Версия ' + s.version + ' · окно сервера должно оставаться открытым';
+  $('calls').innerHTML = s.calls ? '<span class="ok"><span class="dot" style="background:var(--good)"></span>работают</span>' : '<span class="bad"><span class="dot" style="background:var(--bad)"></span>не работают</span>';
+  $('callsErr').textContent = s.calls ? '' : (s.callsError || 'запускаются…');
+  $('nUsers').textContent = (s.users || []).length;
+  $('nChats').textContent = s.chats + ' / ' + s.messages;
+  $('invite').textContent = s.invite;
+  const lan = s.lan || [];
+  let html = lan.map(a => `<div class="row"><span>${esc(a.kind)} <span class="muted">(${esc(a.iface)})</span></span><span><b class="mono">${esc(a.ip)}:${s.port}</b><button class="copy" onclick="copy('${esc(a.ip)}:${s.port}')">копировать</button></span></div>`).join('');
+  if (s.publicIP) html += `<div class="row"><span>Интернет <span class="muted">(нужны открытые порты)</span></span><span><b class="mono">${esc(s.publicIP)}:${s.port}</b><button class="copy" onclick="copy('${esc(s.publicIP)}:${s.port}')">копировать</button></span></div>`;
+  $('addrs').innerHTML = html || '<div class="muted">Нет сети</div>';
+  $('lanMain').textContent = lan.length ? lan[0].ip : '—';
+  $('pubAddr').textContent = s.publicIP ? s.publicIP + ':' + s.port : '(внешний IP не определился)';
+  $('ports').innerHTML = (s.ports || []).map(p => `<tr><td class="mono">${p.port}</td><td>${p.proto}</td><td>${esc(p.what)}</td></tr>`).join('');
+  $('users').innerHTML = (s.users || []).map(u => `<tr><td class="mono">${esc(u.username)}</td><td>${esc(u.name)}</td><td class="muted">${esc((u.created||'').slice(0,16))}</td><td><button onclick="resetPass('${esc(u.id)}','${esc(u.username)}')">Сменить пароль</button></td></tr>`).join('');
+  $('noUsers').textContent = (s.users || []).length ? '' : 'Пока никто не зарегистрировался.';
+  $('aEmail').textContent = s.adminEmail; $('aPass').textContent = s.adminPassword; $('dataDir').textContent = s.dataDir;
+}
+async function newInvite() {
+  if (!confirm('Сделать новый код? Старый перестанет работать (уже зарегистрированных это не касается).')) return;
+  await fetch('/api/wc/panel/invite', {method:'POST'}); load();
+}
+async function resetPass(id, name) {
+  const p = prompt('Новый пароль для ' + name + ' (минимум 8 символов):'); if (!p) return;
+  const r = await fetch('/api/wc/panel/password', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({id, password:p})});
+  const j = await r.json(); alert(r.ok ? 'Пароль изменён' : (j.message || 'Ошибка'));
+}
+load(); setInterval(load, 5000);
+</script>
+</body>
+</html>
