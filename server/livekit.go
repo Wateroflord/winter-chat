@@ -177,7 +177,11 @@ func liveKitConfig(publicIP string) string {
 	b.WriteString("keys:\n")
 	fmt.Fprintf(&b, "  %s: %s\n", cfg.LKKey, cfg.LKSecret)
 	b.WriteString("room:\n  auto_create: true\n  empty_timeout: 60\n  departure_timeout: 10\n")
-	b.WriteString("logging:\n  level: warn\n")
+	level := os.Getenv("WC_LK_LOG")
+	if level == "" {
+		level = "warn"
+	}
+	fmt.Fprintf(&b, "logging:\n  level: %s\n", level)
 	return b.String()
 }
 

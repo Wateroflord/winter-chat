@@ -7,6 +7,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
+import 'package:livekit_client/livekit_client.dart' show setLoggingLevel, LoggerLevel;
+import 'package:logging/logging.dart';
 import 'package:winter_chat/call_controller.dart';
 import 'package:winter_chat/main.dart' as app;
 import 'package:winter_chat/screens/call_screen.dart';
@@ -54,6 +56,11 @@ Future<void> waitUntil(WidgetTester t, bool Function() cond, {int seconds = 25, 
 
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
+  setLoggingLevel(LoggerLevel.kINFO);
+  Logger('livekit').onRecord.listen((r) {
+    // ignore: avoid_print
+    print('LK ${r.level.name} ${r.message}${r.error != null ? ' ERR ${r.error}' : ''}');
+  });
 
   testWidgets('регистрация, чат, сообщение, звонок', (t) async {
     await app.main();

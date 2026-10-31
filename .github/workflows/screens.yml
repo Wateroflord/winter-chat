@@ -39,7 +39,7 @@ jobs:
       - name: Start server and Bob
         run: |
           cd server/out
-          ./winter-chat-server --no-browser > server.log 2>&1 &
+          WC_LK_LOG=debug ./winter-chat-server --no-browser > server.log 2>&1 &
           B=http://127.0.0.1:8090
           for i in $(seq 1 60); do curl -sf $B/api/wc/info >/dev/null && break; sleep 1; done
           for i in $(seq 1 30); do curl -sf $B/api/wc/info | jq -e .calls >/dev/null && break; sleep 1; done
@@ -78,7 +78,7 @@ jobs:
           code=$?
           tail -80 drive.txt
           if [ $code -ne 0 ]; then
-            { echo "exit=$code"; grep -v '^::' drive.txt | grep -iE "Не дождался|Expected|Actual|EXCEPTION|Error|error:|failed|SHOT|Which:" | head -60; echo '--- server.log'; tail -20 server/out/server.log; } > ui_fail.txt
+            { echo "exit=$code"; grep -v '^::' drive.txt | grep -iE "Не дождался|Expected|Actual|EXCEPTION|Error|error:|failed|SHOT|Which:|^LK " | head -90; echo '--- server.log'; tail -20 server/out/server.log; } > ui_fail.txt
             python3 tools/annotate.py ui_fail.txt go
           fi
           echo $code > ui_code.txt
@@ -88,7 +88,7 @@ jobs:
           mkdir -p out
           cp -r shots out/ 2>/dev/null || true
           cp drive.txt ui_code.txt out/ 2>/dev/null || true
-          cp server/out/server.log server/out/bob.log out/ 2>/dev/null || true
+          cp server/out/server.log server/out/bob.log server/out/winter-chat-data/livekit.log server/out/winter-chat-data/livekit.yaml out/ 2>/dev/null || true
           git config user.name "winter-chat-bot"
           git config user.email "actions@users.noreply.github.com"
           git checkout --orphan screens-out

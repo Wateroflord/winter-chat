@@ -24,6 +24,7 @@ dev_dependencies:
     sdk: flutter
   integration_test:
     sdk: flutter
+  logging: any
   flutter_launcher_icons: ^0.14.1
 
 flutter:

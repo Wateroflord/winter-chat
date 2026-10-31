@@ -74,6 +74,12 @@ LKT=$(curl -s -X POST $B/api/wc/call-token -H "Authorization: $T1" -H 'Content-T
 code=$(curl -s -o /tmp/v.txt -w '%{http_code}' "$B/lk/rtc/validate" -H "Authorization: Bearer $LKT")
 echo "validate: $code $(cat /tmp/v.txt)"
 [ "$code" = "200" ] || fail "прокси LiveKit /lk/rtc/validate: $code $(cat /tmp/v.txt)"
+hdr=$(curl -s --http1.1 -i -N --max-time 4 "$B/lk/rtc?auto_subscribe=1&adaptive_stream=0&protocol=16" \
+  -H "Connection: Upgrade" -H "Upgrade: websocket" -H "Sec-WebSocket-Version: 13" \
+  -H "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==" -H "Authorization: Bearer $LKT" 2>&1 | head -5)
+echo "websocket: $hdr"
+echo "$hdr" | grep -q " 101" || fail "WebSocket звонка через прокси не открылся: $hdr"
+ok "WebSocket звонка через прокси"
 code=$(curl -s -o /dev/null -w '%{http_code}' -X POST $B/api/wc/call-token -H "Authorization: $T3" -H 'Content-Type: application/json' -d "{\"chat\":\"$CHAT\"}")
 [ "$code" = "403" ] || fail "посторонний получил токен звонка ($code)"
 ok "звонки: токен и прокси"
