@@ -59,8 +59,25 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - name: Smoke test (регистрация, чаты, файлы, звонки)
         run: |
-          bash server/smoke_test.sh "$PWD/server/out/linux" 2>&1 | tee smoke.txt
-          exit ${PIPESTATUS[0]}
+          set +e
+          command -v jq >/dev/null || sudo apt-get install -y -q jq
+          bash server/smoke_test.sh "$PWD/server/out/linux" > smoke.txt 2>&1
+          code=$?
+          cat smoke.txt
+          if [ $code -ne 0 ]; then
+            {
+              echo "exit=$code"
+              grep -v '^::' smoke.txt | tail -60
+              echo '--- server.log'
+              tail -40 server/out/linux/server.log
+              echo '--- livekit.log'
+              tail -30 server/out/linux/winter-chat-data/livekit.log
+              echo '--- livekit.yaml'
+              cat server/out/linux/winter-chat-data/livekit.yaml
+            } > smoke_fail.txt 2>&1
+            python3 tools/annotate.py smoke_fail.txt go
+            exit 1
+          fi
       - name: Package
         run: |
           rm -rf server/out/linux/winter-chat-data server/out/linux/server.log

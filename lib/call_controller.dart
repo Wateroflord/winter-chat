@@ -103,7 +103,7 @@ class CallController extends ChangeNotifier {
       connecting = false;
       error = e is String ? e : 'Не удалось подключиться к звонку: $e';
       room = null;
-      chatId = null;
+      this.chatId = null;
       notifyListeners();
       rethrow;
     }

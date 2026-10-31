@@ -63,7 +63,7 @@ if g.exists():
         gs = gs.replace(
             'signingConfig = signingConfigs.getByName("debug")',
             'signingConfig = signingConfigs.getByName("debug")\n'
-            '            proguardFiles(getDefaultProguardFile("proguard-android.txt"), "proguard-rules.pro")',
+            '            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")',
             1,
         )
     gs = re.sub(r"minSdk = flutter\.minSdkVersion", "minSdk = 24", gs)

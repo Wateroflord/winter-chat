@@ -494,7 +494,6 @@ class _ChatScreenState extends State<ChatScreen> {
         final grouped = !newDay &&
             older != null &&
             older.getStringValue('author') == author &&
-            od != null &&
             d.difference(od).inMinutes < 5;
         return Column(
           children: [
