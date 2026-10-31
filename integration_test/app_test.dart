@@ -56,6 +56,7 @@ Future<void> waitUntil(WidgetTester t, bool Function() cond, {int seconds = 25, 
 
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
+  hierarchicalLoggingEnabled = true;
   setLoggingLevel(LoggerLevel.kINFO);
   Logger('livekit').onRecord.listen((r) {
     // ignore: avoid_print
