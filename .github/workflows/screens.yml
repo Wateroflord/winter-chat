@@ -32,7 +32,9 @@ jobs:
       - name: Linux tools, virtual screen and sound
         run: |
           sudo apt-get update -q
-          sudo apt-get install -y -q ninja-build libgtk-3-dev clang cmake pkg-config liblzma-dev libstdc++-12-dev libpulse-dev libasound2-dev xvfb pulseaudio jq zenity
+          sudo apt-get install -y -q ninja-build libgtk-3-dev clang cmake pkg-config liblzma-dev libstdc++-12-dev libpulse-dev libasound2-dev xvfb pulseaudio jq zenity network-manager
+          sudo systemctl start NetworkManager || sudo service network-manager start || true
+          nmcli general status || true
           pulseaudio -D --exit-idle-time=-1 || true
           pactl load-module module-null-sink sink_name=dummy || true
           pactl set-default-source dummy.monitor || true

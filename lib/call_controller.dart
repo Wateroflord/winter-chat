@@ -42,9 +42,10 @@ class CallController extends ChangeNotifier {
     connecting = true;
     error = null;
     notifyListeners();
+    Room? r;
     try {
       final t = await Api.I.callToken(chatId);
-      final r = Room(
+      r = Room(
         roomOptions: const RoomOptions(
           adaptiveStream: true,
           dynacast: true,
@@ -65,7 +66,7 @@ class CallController extends ChangeNotifier {
       final l = r.createListener();
       l
         ..on<RoomDisconnectedEvent>((_) {
-          if (room == r) _cleanup();
+          if (room != null && room == r) _cleanup();
         })
         ..on<RoomReconnectingEvent>((_) {
           reconnecting = true;
@@ -78,7 +79,10 @@ class CallController extends ChangeNotifier {
         ..on<RoomEvent>((_) => notifyListeners());
       r.addListener(notifyListeners);
 
-      await r.connect(t.url, t.token, connectOptions: const ConnectOptions(autoSubscribe: true));
+      await r.connect(t.url, t.token, connectOptions: const ConnectOptions(autoSubscribe: true)).timeout(
+        const Duration(seconds: 30),
+        onTimeout: () => throw 'Звонок не подключился за 30 секунд. Проверь интернет и что на сервере открыты порты 7881 (TCP) и 7882 (UDP).',
+      );
       room = r;
       _listener = l;
       startedAt = DateTime.now();
@@ -91,7 +95,7 @@ class CallController extends ChangeNotifier {
         } catch (_) {}
       }
       try {
-        await r.localParticipant?.setMicrophoneEnabled(true);
+        await r.localParticipant?.setMicrophoneEnabled(true).timeout(const Duration(seconds: 10));
       } catch (e) {
         error = 'Микрофон недоступен: $e';
       }
@@ -102,6 +106,10 @@ class CallController extends ChangeNotifier {
     } catch (e) {
       connecting = false;
       error = e is String ? e : 'Не удалось подключиться к звонку: $e';
+      if (r != null) {
+        r.removeListener(notifyListeners);
+        unawaited(r.dispose().catchError((_) {}));
+      }
       room = null;
       this.chatId = null;
       notifyListeners();
