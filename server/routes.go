@@ -136,13 +136,51 @@ func registerRoutes(app core.App) {
 	})
 }
 
-// isLocalRequest — запрос пришёл с этого же компьютера (не через роутер).
+// isLocalRequest — запрос к панели пришёл с этого же компьютера и не от чужого сайта.
+//
+// Проверяем: адрес — этот компьютер; запрос не прошёл через туннель/прокси
+// (ngrok, cloudflared и т.п. подключаются с 127.0.0.1, но добавляют свои заголовки);
+// Host — localhost (защита от DNS rebinding); браузер не сообщает, что запрос
+// пришёл со стороннего сайта (защита от подделки запросов).
 func isLocalRequest(r *http.Request) bool {
 	host, _, err := net.SplitHostPort(r.RemoteAddr)
 	if err != nil {
 		return false
 	}
 	ip := net.ParseIP(host)
+	if ip == nil || !ip.IsLoopback() {
+		return false
+	}
+	for _, h := range []string{"X-Forwarded-For", "X-Forwarded-Host", "Forwarded", "X-Real-Ip", "Cf-Connecting-Ip", "True-Client-Ip", "Ngrok-Agent-Ips"} {
+		if r.Header.Get(h) != "" {
+			return false
+		}
+	}
+	if !isLocalHost(r.Host) {
+		return false
+	}
+	if site := r.Header.Get("Sec-Fetch-Site"); site != "" && site != "same-origin" && site != "none" {
+		return false
+	}
+	if o := r.Header.Get("Origin"); o != "" {
+		u, err := url.Parse(o)
+		if err != nil || !isLocalHost(u.Host) {
+			return false
+		}
+	}
+	return true
+}
+
+func isLocalHost(hostport string) bool {
+	h := hostport
+	if hh, _, err := net.SplitHostPort(hostport); err == nil {
+		h = hh
+	}
+	h = strings.Trim(strings.ToLower(h), "[]")
+	if h == "localhost" {
+		return true
+	}
+	ip := net.ParseIP(h)
 	return ip != nil && ip.IsLoopback()
 }
 

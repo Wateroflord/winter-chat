@@ -65,7 +65,10 @@ func main() {
 	}
 	// Двойной клик по программе = запуск сервера.
 	if len(rest) == 0 {
-		rest = []string{"serve", fmt.Sprintf("--http=0.0.0.0:%d", HTTPPort)}
+		// --origins: браузерным страницам с чужих сайтов запрещено читать ответы сервера
+		// (приложения Winter Chat — не браузер, их это не касается).
+		rest = []string{"serve", fmt.Sprintf("--http=0.0.0.0:%d", HTTPPort),
+			fmt.Sprintf("--origins=http://localhost:%d,http://127.0.0.1:%d", HTTPPort, HTTPPort)}
 	}
 	os.Args = append([]string{os.Args[0]}, rest...)
 
@@ -91,6 +94,9 @@ func main() {
 		}
 		if err := ensureSuperuser(se.App); err != nil {
 			return fmt.Errorf("создание администратора: %w", err)
+		}
+		if err := ensureRateLimits(se.App); err != nil {
+			return fmt.Errorf("настройка защиты от перебора: %w", err)
 		}
 		clearCalls(se.App)
 
@@ -140,7 +146,8 @@ func loadOrCreateConfig() {
 		_ = json.Unmarshal(b, &cfg)
 	}
 	changed := false
-	if cfg.InviteCode == "" {
+	// Старые коды вида SNOW-1234 (80 000 вариантов) легко подобрать — меняем на длинный.
+	if len(cfg.InviteCode) < 14 {
 		cfg.InviteCode = newInviteCode()
 		changed = true
 	}
@@ -172,9 +179,34 @@ func saveConfig() {
 	}
 }
 
+// newInviteCode — например SNOW-7K3P-9QXA: слово + 8 случайных знаков (~9 триллионов вариантов).
 func newInviteCode() string {
 	words := []string{"SNOW", "FROST", "ICE", "WINTER", "STORM", "POLAR", "YETI", "AURORA"}
-	return words[randInt(len(words))] + "-" + randomString(4, "0123456789")
+	const abc = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"
+	return words[randInt(len(words))] + "-" + randomString(4, abc) + "-" + randomString(4, abc)
+}
+
+// ensureRateLimits включает встроенное в PocketBase ограничение частоты запросов:
+// перебор пароля или кода приглашения через интернет становится бесполезным.
+func ensureRateLimits(app core.App) error {
+	s := app.Settings()
+	rules := []core.RateLimitRule{
+		{Label: "users:create", Audience: core.RateLimitRuleAudienceGuest, MaxRequests: 5, Duration: 60},
+		{Label: "*:auth", MaxRequests: 2, Duration: 3},
+		{Label: "*:create", MaxRequests: 20, Duration: 5},
+		{Label: "/api/batch", MaxRequests: 3, Duration: 1},
+		{Label: "/api/", MaxRequests: 600, Duration: 10},
+	}
+	same := s.RateLimits.Enabled && len(s.RateLimits.Rules) == len(rules)
+	for i := 0; same && i < len(rules); i++ {
+		same = s.RateLimits.Rules[i] == rules[i]
+	}
+	if same {
+		return nil
+	}
+	s.RateLimits.Enabled = true
+	s.RateLimits.Rules = rules
+	return app.Save(s)
 }
 
 func randInt(n int) int {

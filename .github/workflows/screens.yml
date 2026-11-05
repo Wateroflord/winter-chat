@@ -12,6 +12,13 @@ jobs:
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
+      - name: Shared CI tools (winter-hub/ci)
+        uses: actions/checkout@v4
+        with:
+          repository: Wateroflord/winter-hub
+          path: .winter
+          sparse-checkout: /ci/
+          sparse-checkout-cone-mode: false
       - uses: actions/setup-go@v5
         with:
           go-version: 'stable'
@@ -71,7 +78,7 @@ jobs:
       - name: Run UI test
         run: |
           flutter create --project-name winter_chat --org com.winterhub --platforms linux .
-          rm -rf test
+          rm -f test/widget_test.dart
           python3 tools/patch_linux.py
           flutter pub get
           set +e
@@ -81,7 +88,7 @@ jobs:
           tail -80 drive.txt
           if [ $code -ne 0 ]; then
             { echo "exit=$code"; grep -v '^::' drive.txt | grep -iE "Не дождался|Expected|Actual|EXCEPTION|Error|error:|failed|SHOT|Which:|^LK " | head -90; echo '--- server.log'; tail -20 server/out/server.log; } > ui_fail.txt
-            python3 tools/annotate.py ui_fail.txt go
+            python3 .winter/ci/annotate.py ui_fail.txt go
           fi
           echo $code > ui_code.txt
       - name: Save screenshots to branch

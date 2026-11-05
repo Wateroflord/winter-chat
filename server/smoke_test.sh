@@ -33,7 +33,7 @@ U1=$(reg stas "Стас" | tee /dev/stderr | jq -r .id); [ "$U1" != "null" ] || 
 U2=$(reg vova "Вова" | jq -r .id); [ "$U2" != "null" ] || fail "регистрация vova"
 ok "регистрация"
 
-login() { curl -s -X POST $B/api/collections/users/auth-with-password -H 'Content-Type: application/json' -d "{\"identity\":\"$1\",\"password\":\"password123\"}" | jq -r .token; }
+login() { sleep 2; curl -s -X POST $B/api/collections/users/auth-with-password -H 'Content-Type: application/json' -d "{\"identity\":\"$1\",\"password\":\"password123\"}" | jq -r .token; }
 T1=$(login stas); [ "$T1" != "null" ] && [ -n "$T1" ] || fail "вход stas"
 T2=$(login VOVA); [ "$T2" != "null" ] && [ -n "$T2" ] || fail "вход по логину без учёта регистра"
 ok "вход по логину"
@@ -87,4 +87,26 @@ ok "звонки: токен и прокси"
 curl -sf $B/ | grep -q "Winter" || fail "панель"
 curl -sf $B/api/wc/panel | jq -e '.users|length==3' >/dev/null || fail "данные панели"
 ok "панель"
+
+# Защита панели: чужой сайт, туннель и подмена Host не должны видеть данные
+for h in "Origin: https://evil.example" "Sec-Fetch-Site: cross-site" "X-Forwarded-For: 8.8.8.8" "Host: evil.example:8090"; do
+  code=$(curl -s -o /tmp/p.json -w '%{http_code}' $B/api/wc/panel -H "$h")
+  [ "$code" = "403" ] || fail "панель открыта при заголовке '$h' ($code)"
+  code=$(curl -s -o /dev/null -w '%{http_code}' -X POST $B/api/wc/panel/invite -H "$h")
+  [ "$code" = "403" ] || fail "смена кода приглашения при заголовке '$h' ($code)"
+done
+cors=$(curl -s -i $B/api/wc/info -H "Origin: https://evil.example" | grep -i "access-control-allow-origin" || true)
+[ -z "$cors" ] || fail "сервер разрешает чтение чужим сайтам: $cors"
+ok "панель защищена от чужих сайтов и туннелей"
+
+# Код приглашения длинный, перебор упирается в лимит
+echo "$INVITE" | grep -Eq '^[A-Z]+-[A-Z0-9]{4}-[A-Z0-9]{4}$' || fail "короткий код приглашения: $INVITE"
+limited=0
+for i in $(seq 1 8); do
+  code=$(curl -s -o /dev/null -w '%{http_code}' -X POST $B/api/collections/users/records -H 'Content-Type: application/json' \
+    -d "{\"username\":\"brute$i\",\"password\":\"password123\",\"passwordConfirm\":\"password123\",\"invite\":\"SNOW-AAAA-$i$i$i$i\"}")
+  [ "$code" = "429" ] && limited=1 && break
+done
+[ "$limited" = "1" ] || fail "перебор кода приглашения не ограничен"
+ok "перебор кода приглашения ограничен"
 echo "ВСЕ ПРОВЕРКИ ПРОЙДЕНЫ"

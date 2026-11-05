@@ -2,6 +2,7 @@ name: Build Winter Chat
 
 on:
   push:
+    branches: [main]
     paths-ignore:
       - 'README.md'
       - 'integration_test/**'
@@ -16,6 +17,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Shared CI tools (winter-hub/ci)
+        uses: actions/checkout@v4
+        with:
+          repository: Wateroflord/winter-hub
+          path: .winter
+          sparse-checkout: /ci/
+          sparse-checkout-cone-mode: false
       - uses: actions/setup-go@v5
         with:
           go-version: 'stable'
@@ -25,10 +33,10 @@ jobs:
         run: |
           set -o pipefail
           go version
-          go mod tidy > ../go.txt 2>&1 || { cat ../go.txt; python3 ../tools/annotate.py ../go.txt go; exit 1; }
+          go mod tidy > ../go.txt 2>&1 || { cat ../go.txt; python3 ../.winter/ci/annotate.py ../go.txt go; exit 1; }
           VER=1.0.${{ github.run_number }}
-          GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -trimpath -ldflags "-s -w -X main.Version=$VER" -o out/linux/winter-chat-server . > ../go.txt 2>&1 || { cat ../go.txt; python3 ../tools/annotate.py ../go.txt go; exit 1; }
-          GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -trimpath -ldflags "-s -w -X main.Version=$VER" -o out/windows/winter-chat-server.exe . > ../go.txt 2>&1 || { cat ../go.txt; python3 ../tools/annotate.py ../go.txt go; exit 1; }
+          GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -trimpath -ldflags "-s -w -X main.Version=$VER" -o out/linux/winter-chat-server . > ../go.txt 2>&1 || { cat ../go.txt; python3 ../.winter/ci/annotate.py ../go.txt go; exit 1; }
+          GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -trimpath -ldflags "-s -w -X main.Version=$VER" -o out/windows/winter-chat-server.exe . > ../go.txt 2>&1 || { cat ../go.txt; python3 ../.winter/ci/annotate.py ../go.txt go; exit 1; }
           go vet . || true
           ls -la out/*
       - name: Download LiveKit server
@@ -77,7 +85,7 @@ jobs:
               echo '--- livekit.yaml'
               cat server/out/linux/winter-chat-data/livekit.yaml
             } > smoke_fail.txt 2>&1
-            python3 tools/annotate.py smoke_fail.txt go
+            python3 .winter/ci/annotate.py smoke_fail.txt go
             exit 1
           fi
       - name: Package
@@ -101,6 +109,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Shared CI tools (winter-hub/ci)
+        uses: actions/checkout@v4
+        with:
+          repository: Wateroflord/winter-hub
+          path: .winter
+          sparse-checkout: /ci/
+          sparse-checkout-cone-mode: false
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -112,22 +127,34 @@ jobs:
       - name: Create Android project
         run: |
           flutter create --project-name winter_chat --org com.winterhub --platforms android .
-          rm -rf test
+          rm -f test/widget_test.dart
           python3 tools/patch_android.py
-          mkdir -p ~/.android
-          cp tools/debug.keystore ~/.android/debug.keystore
           flutter pub get
           dart run flutter_launcher_icons || true
       - name: Analyze
         run: |
-          flutter analyze --no-fatal-infos --no-fatal-warnings > analyze.txt 2>&1 || true
+          rc=0
+          flutter analyze --no-fatal-infos --no-fatal-warnings > analyze.txt 2>&1 || rc=$?
           cat analyze.txt
-          python3 tools/annotate.py analyze.txt "analyze"
+          python3 .winter/ci/annotate.py analyze.txt "analyze"
+          exit $rc
+      - name: Tests
+        run: |
+          set -o pipefail
+          if ls test/*_test.dart >/dev/null 2>&1; then
+            flutter test test 2>&1 | tee test.txt || { python3 .winter/ci/annotate.py test.txt "tests"; exit 1; }
+          else
+            echo "Тестов нет"
+          fi
       - name: Build APK
         run: |
           set -o pipefail
-          flutter build apk --release --target-platform android-arm64 --dart-define=BUILD=${{ github.run_number }} --build-number=${{ github.run_number }} --build-name=1.0.${{ github.run_number }} 2>&1 | tee build.txt || { python3 tools/annotate.py build.txt "build"; exit 1; }
+          flutter build apk --release --target-platform android-arm64 --dart-define=BUILD=${{ github.run_number }} --build-number=${{ github.run_number }} --build-name=1.0.${{ github.run_number }} 2>&1 | tee build.txt || { python3 .winter/ci/annotate.py build.txt "build"; exit 1; }
           mkdir -p dist && cp build/app/outputs/flutter-apk/app-release.apk dist/Winter-Chat.apk
+      - name: Sign APK
+        env:
+          WINTER_SIGNING: ${{ secrets.WINTER_SIGNING }}
+        run: python3 .winter/ci/sign_apk.py dist/Winter-Chat.apk
       - uses: actions/upload-artifact@v4
         with:
           name: android
@@ -158,6 +185,13 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Shared CI tools (winter-hub/ci)
+        uses: actions/checkout@v4
+        with:
+          repository: Wateroflord/winter-hub
+          path: .winter
+          sparse-checkout: /ci/
+          sparse-checkout-cone-mode: false
       - uses: subosito/flutter-action@v2
         with:
           channel: stable
@@ -166,7 +200,7 @@ jobs:
         shell: bash
         run: |
           flutter create --project-name winter_chat --org com.winterhub --platforms windows .
-          rm -rf test
+          rm -f test/widget_test.dart
           python tools/patch_windows.py
           flutter pub get
           dart run flutter_launcher_icons -f icons_windows.yaml || true
@@ -174,7 +208,7 @@ jobs:
         shell: bash
         run: |
           set -o pipefail
-          flutter build windows --release --dart-define=BUILD=${{ github.run_number }} --build-number=${{ github.run_number }} --build-name=1.0.${{ github.run_number }} 2>&1 | tee build.txt || { python3 tools/annotate.py build.txt "windows"; exit 1; }
+          flutter build windows --release --dart-define=BUILD=${{ github.run_number }} --build-number=${{ github.run_number }} --build-name=1.0.${{ github.run_number }} 2>&1 | tee build.txt || { python3 .winter/ci/annotate.py build.txt "windows"; exit 1; }
       - name: Build installer
         shell: pwsh
         env:
@@ -196,6 +230,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Shared CI tools (winter-hub/ci)
+        uses: actions/checkout@v4
+        with:
+          repository: Wateroflord/winter-hub
+          path: .winter
+          sparse-checkout: /ci/
+          sparse-checkout-cone-mode: false
       - name: Linux build tools
         run: |
           sudo apt-get update -q
@@ -207,13 +248,13 @@ jobs:
       - name: Create Linux project
         run: |
           flutter create --project-name winter_chat --org com.winterhub --platforms linux .
-          rm -rf test
+          rm -f test/widget_test.dart
           python3 tools/patch_linux.py
           flutter pub get
       - name: Build Linux app
         run: |
           set -o pipefail
-          flutter build linux --release --dart-define=BUILD=${{ github.run_number }} --build-number=${{ github.run_number }} --build-name=1.0.${{ github.run_number }} 2>&1 | tee build.txt || { python3 tools/annotate.py build.txt "linux"; exit 1; }
+          flutter build linux --release --dart-define=BUILD=${{ github.run_number }} --build-number=${{ github.run_number }} --build-name=1.0.${{ github.run_number }} 2>&1 | tee build.txt || { python3 .winter/ci/annotate.py build.txt "linux"; exit 1; }
       - name: Package and attach
         run: |
           mkdir -p pkg/winter-chat
