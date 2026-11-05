@@ -19,7 +19,7 @@ String shortTime(DateTime d) {
   if (sameDay(d, now)) return hhmm(d);
   if (sameDay(d, now.subtract(const Duration(days: 1)))) return 'вчера';
   if (d.year == now.year) return '${d.day} ${_months[d.month - 1].substring(0, 3)}';
-  return '${two(d.day)}.${two(d.month)}.${d.year % 100}';
+  return '${two(d.day)}.${two(d.month)}.${two(d.year % 100)}';
 }
 
 /// Заголовок дня в переписке.
