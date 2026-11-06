@@ -9,7 +9,7 @@ import 'package:winter_core/winter_core.dart';
 
 const buildNumber = String.fromEnvironment('BUILD', defaultValue: 'dev');
 
-void main() => runWinterApp(repo: 'winter-chat', appName: 'Winter Chat', body: _main);
+Future<void> main() => runWinterApp(repo: 'winter-chat', appName: 'Winter Chat', body: _main);
 
 Future<void> _main() async {
   WidgetsFlutterBinding.ensureInitialized();
