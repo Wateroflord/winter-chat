@@ -66,6 +66,36 @@ code=$(curl -s -o /dev/null -w '%{http_code}' -X POST $B/api/collections/message
 [ "$code" != "200" ] || fail "посторонний может писать в чат"
 ok "приватность"
 
+# --- Winter Arc: очки дисциплины ---
+TODAY=$(date +%F)
+arc=$(curl -s $B/api/wc/info | jq -c .arc)
+[ "$(echo "$arc" | jq -r .start)" = "$TODAY" ] || fail "Winter Arc начинается не сегодня: $arc"
+[ "$(echo "$arc" | jq -r .end)" = "$(date -d "$TODAY +364 day" +%F)" ] || fail "Winter Arc не 365 дней: $arc"
+S1=$(curl -s -X POST $B/api/collections/arc_scores/records -H "Authorization: $T1" -H 'Content-Type: application/json' \
+  -d "{\"user\":\"$U2\",\"day\":\"$TODAY\",\"food\":999,\"water\":5,\"sleep\":20,\"steps\":-3,\"workout\":0}" | tee /dev/stderr)
+[ "$(echo "$S1" | jq -r .user)" = "$U1" ] || fail "очки записались другому человеку"
+[ "$(echo "$S1" | jq -r .food)" = "30" ] || fail "очки не обрезаются до максимума"
+[ "$(echo "$S1" | jq -r .steps)" = "0" ] || fail "отрицательные очки"
+[ "$(echo "$S1" | jq -r .total)" = "55" ] || fail "сумма очков посчитана неверно"
+SID=$(echo "$S1" | jq -r .id)
+code=$(curl -s -o /dev/null -w '%{http_code}' -X POST $B/api/collections/arc_scores/records -H "Authorization: $T1" -H 'Content-Type: application/json' -d "{\"day\":\"$TODAY\",\"food\":10}")
+[ "$code" = "400" ] || fail "второй раз за тот же день ($code)"
+code=$(curl -s -o /dev/null -w '%{http_code}' -X PATCH $B/api/collections/arc_scores/records/$SID -H "Authorization: $T2" -H 'Content-Type: application/json' -d '{"food":0}')
+[ "$code" != "200" ] || fail "чужие очки можно менять"
+for d in "$(date -d "$TODAY -1 day" +%F)" "$(date -d "$TODAY +5 day" +%F)" "2026-13-01"; do
+  code=$(curl -s -o /dev/null -w '%{http_code}' -X POST $B/api/collections/arc_scores/records -H "Authorization: $T1" -H 'Content-Type: application/json' -d "{\"day\":\"$d\",\"food\":10}")
+  [ "$code" = "400" ] || fail "день $d вне Winter Arc принят ($code)"
+done
+upd=$(curl -s -X PATCH $B/api/collections/arc_scores/records/$SID -H "Authorization: $T1" -H 'Content-Type: application/json' -d '{"workout":20,"total":100}')
+[ "$(echo "$upd" | jq -r .total)" = "75" ] || fail "сумма после изменения: $upd"
+n=$(curl -s "$B/api/collections/arc_scores/records?filter=day='$TODAY'&expand=user" -H "Authorization: $T2" | jq '.items|length')
+[ "$n" = "1" ] || fail "друзья не видят рейтинг ($n)"
+code=$(curl -s -o /dev/null -w '%{http_code}' "$B/api/collections/arc_scores/records")
+n=$(curl -s "$B/api/collections/arc_scores/records" | jq '.items|length')
+[ "$n" = "0" ] || fail "рейтинг виден без входа"
+[ "$(curl -s -X POST $B/api/wc/panel/arc-restart | jq -r .start)" = "$TODAY" ] || fail "перезапуск Winter Arc"
+ok "Winter Arc: очки, защита, рейтинг"
+
 # Звонки
 for i in $(seq 1 20); do curl -sf $B/api/wc/info | jq -e .calls >/dev/null && break; sleep 1; done
 curl -sf $B/api/wc/info | jq -e .calls >/dev/null || fail "LiveKit не запустился"

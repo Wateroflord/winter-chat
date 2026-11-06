@@ -14,6 +14,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/pocketbase/pocketbase"
 	"github.com/pocketbase/pocketbase/core"
@@ -36,6 +37,7 @@ type Config struct {
 	LKSecret      string `json:"livekitSecret"`
 	AdminEmail    string `json:"adminEmail"`
 	AdminPassword string `json:"adminPassword"`
+	ArcStart      string `json:"arcStart"` // первый день Winter Arc (ГГГГ-ММ-ДД)
 }
 
 var (
@@ -78,6 +80,7 @@ func main() {
 	})
 
 	registerHooks(app)
+	registerArcHooks(app)
 	registerRoutes(app)
 
 	lk := newLiveKit(app)
@@ -91,6 +94,9 @@ func main() {
 
 		if err := ensureSchema(se.App); err != nil {
 			return fmt.Errorf("подготовка базы: %w", err)
+		}
+		if err := ensureArcSchema(se.App); err != nil {
+			return fmt.Errorf("подготовка Winter Arc: %w", err)
 		}
 		if err := ensureSuperuser(se.App); err != nil {
 			return fmt.Errorf("создание администратора: %w", err)
@@ -165,6 +171,11 @@ func loadOrCreateConfig() {
 	}
 	if cfg.AdminPassword == "" {
 		cfg.AdminPassword = randomString(14, "abcdefghijkmnopqrstuvwxyz23456789")
+		changed = true
+	}
+	// Winter Arc начинается в день первого запуска сервера с рейтингом.
+	if _, err := time.Parse(dayLayout, cfg.ArcStart); err != nil {
+		cfg.ArcStart = today()
 		changed = true
 	}
 	if changed {

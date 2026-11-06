@@ -37,6 +37,7 @@ func registerRoutes(app core.App) {
 				"app":     "winter-chat",
 				"version": Version,
 				"calls":   running,
+				"arc":     arcInfo(),
 			})
 		})
 
@@ -102,6 +103,15 @@ func registerRoutes(app core.App) {
 				return e.ForbiddenError("", nil)
 			}
 			return e.JSON(http.StatusOK, panelData(e.App))
+		})
+		// Начать Winter Arc заново с сегодняшнего дня (старые очки остаются, но в рейтинг не идут).
+		r.POST("/api/wc/panel/arc-restart", func(e *core.RequestEvent) error {
+			if !isLocalRequest(e.Request) {
+				return e.ForbiddenError("", nil)
+			}
+			cfg.ArcStart = today()
+			saveConfig()
+			return e.JSON(http.StatusOK, arcInfo())
 		})
 		r.POST("/api/wc/panel/invite", func(e *core.RequestEvent) error {
 			if !isLocalRequest(e.Request) {
@@ -209,6 +219,7 @@ func panelData(app core.App) map[string]any {
 		"lan":           lanIPs(),
 		"publicIP":      publicIP,
 		"invite":        cfg.InviteCode,
+		"arc":           arcInfo(),
 		"adminEmail":    cfg.AdminEmail,
 		"adminPassword": cfg.AdminPassword,
 		"calls":         running,

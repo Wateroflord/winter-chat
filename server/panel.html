@@ -56,6 +56,13 @@
       <button onclick="newInvite()">Новый код</button>
     </div>
 
+    <div class="card">
+      <h2>Winter Arc</h2>
+      <div class="big" id="arcDates">…</div>
+      <div class="muted" style="margin:8px 0 12px">365 дней. Очки дисциплины присылает КБЖУ Трекер (вход — тем же логином, что в чате). Рейтинг видят все участники.</div>
+      <button onclick="arcRestart()">Начать заново с сегодня</button>
+    </div>
+
     <div class="card full">
       <h2>Адрес сервера для приложения</h2>
       <div id="addrs"></div>
@@ -106,6 +113,8 @@ async function load() {
   $('nUsers').textContent = (s.users || []).length;
   $('nChats').textContent = s.chats + ' / ' + s.messages;
   $('invite').textContent = s.invite;
+  const d = x => (x || '').split('-').reverse().join('.');
+  $('arcDates').textContent = s.arc ? d(s.arc.start) + ' — ' + d(s.arc.end) : '—';
   const lan = s.lan || [];
   let html = lan.map(a => `<div class="row"><span>${esc(a.kind)} <span class="muted">(${esc(a.iface)})</span></span><span><b class="mono">${esc(a.ip)}:${s.port}</b><button class="copy" onclick="copy('${esc(a.ip)}:${s.port}')">копировать</button></span></div>`).join('');
   if (s.publicIP) html += `<div class="row"><span>Интернет <span class="muted">(нужны открытые порты)</span></span><span><b class="mono">${esc(s.publicIP)}:${s.port}</b><button class="copy" onclick="copy('${esc(s.publicIP)}:${s.port}')">копировать</button></span></div>`;
@@ -120,6 +129,10 @@ async function load() {
 async function newInvite() {
   if (!confirm('Сделать новый код? Старый перестанет работать (уже зарегистрированных это не касается).')) return;
   await fetch('/api/wc/panel/invite', {method:'POST'}); load();
+}
+async function arcRestart() {
+  if (!confirm('Начать Winter Arc заново с сегодняшнего дня? Очки за прошлые дни перестанут считаться в рейтинге.')) return;
+  await fetch('/api/wc/panel/arc-restart', {method:'POST'}); load();
 }
 async function resetPass(id, name) {
   const p = prompt('Новый пароль для ' + name + ' (минимум 8 символов):'); if (!p) return;
