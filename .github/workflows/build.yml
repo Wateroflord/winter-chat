@@ -1,3 +1,4 @@
+# Сборка: общие скрипты и подпись — winter-hub/ci (sign_apk.py, annotate.py).
 name: Build Winter Chat
 
 on:
