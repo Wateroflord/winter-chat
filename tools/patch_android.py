@@ -19,6 +19,7 @@ perms = [
     "android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION",
     "android.permission.POST_NOTIFICATIONS",
     "android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS",
+    "android.permission.RECEIVE_BOOT_COMPLETED",
 ]
 for p in perms:
     if p not in t:
@@ -46,6 +47,25 @@ service = (
 if "IsolateHolderService" not in t:
     t = t.replace("</application>", service + "    </application>", 1)
 
+# Фоновая проверка новых сообщений (android_alarm_manager_plus).
+if "AlarmService" not in t:
+    t = t.replace("</application>", """    <service
+            android:name="dev.fluttercommunity.plus.androidalarmmanager.AlarmService"
+            android:permission="android.permission.BIND_JOB_SERVICE"
+            android:exported="false"/>
+        <receiver
+            android:name="dev.fluttercommunity.plus.androidalarmmanager.AlarmBroadcastReceiver"
+            android:exported="false"/>
+        <receiver
+            android:name="dev.fluttercommunity.plus.androidalarmmanager.RebootBroadcastReceiver"
+            android:enabled="false"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED"/>
+            </intent-filter>
+        </receiver>
+    </application>""", 1)
+
 m.write_text(t, encoding="utf-8")
 
 # Правила, чтобы оптимизатор не вырезал WebRTC.
@@ -67,6 +87,14 @@ if g.exists():
             1,
         )
     gs = re.sub(r"minSdk = flutter\.minSdkVersion", "minSdk = 24", gs)
+    # Уведомления (flutter_local_notifications) требуют desugaring.
+    if "isCoreLibraryDesugaringEnabled" not in gs:
+        gs = re.sub(r"compileOptions\s*\{", "compileOptions {\n        isCoreLibraryDesugaringEnabled = true", gs, count=1)
+    if "desugar_jdk_libs" not in gs:
+        if re.search(r"^dependencies\s*\{", gs, re.M):
+            gs = re.sub(r"^dependencies\s*\{", 'dependencies {\n    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")', gs, count=1, flags=re.M)
+        else:
+            gs += '\ndependencies {\n    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")\n}\n'
     g.write_text(gs, encoding="utf-8")
 
 print(t)
