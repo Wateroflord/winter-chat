@@ -114,7 +114,7 @@ jobs:
 
   app:
     needs: server
-    uses: Wateroflord/winter-hub/.github/workflows/flutter-app.yml@abi-split
+    uses: Wateroflord/winter-hub/.github/workflows/flutter-app.yml@main
     secrets: inherit
     with:
       project: winter_chat
@@ -127,7 +127,6 @@ jobs:
 
         **Сервер для ноутбука:** Winter-Chat-Server-Windows.zip или Winter-Chat-Server-Linux.tar.gz — распакуй и запусти, внутри есть инструкция.
       publish: ${{ github.event_name != 'workflow_dispatch' || inputs.publish }}
-      hub_ref: abi-split  # TEMP: test
 
   linux:
     needs: app
