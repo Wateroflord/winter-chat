@@ -13,6 +13,7 @@ dependencies:
     git:
       url: https://github.com/Wateroflord/winter-hub.git
       path: packages/winter_core
+      ref: abi-split
   pocketbase: ^0.25.0
   http: ^1.2.2
   livekit_client: ^2.13.0
