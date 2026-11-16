@@ -1,4 +1,5 @@
-# Сборка: общие скрипты и подпись — winter-hub/ci (sign_apk.py, annotate.py).
+# Сборка приложения — общая для всех приложений Winter: winter-hub/.github/workflows/flutter-app.yml
+# (отдельный APK под каждый процессор, подпись, релиз, Windows-установщик). Сервер и Linux — здесь.
 name: Build Winter Chat
 
 on:
@@ -9,6 +10,11 @@ on:
       - 'integration_test/**'
       - '.github/workflows/screens.yml'
   workflow_dispatch:
+    inputs:
+      publish:
+        description: 'Выпустить релиз (выключи, чтобы только проверить сборку)'
+        type: boolean
+        default: true
 
 permissions:
   contents: write
@@ -106,128 +112,25 @@ jobs:
           name: server
           path: dist/*
 
-  android:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Shared CI tools (winter-hub/ci)
-        uses: actions/checkout@v4
-        with:
-          repository: Wateroflord/winter-hub
-          path: .winter
-          sparse-checkout: /ci/
-          sparse-checkout-cone-mode: false
-      - uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: '17'
-      - uses: subosito/flutter-action@v2
-        with:
-          channel: stable
-          cache: true
-      - name: Create Android project
-        run: |
-          flutter create --project-name winter_chat --org com.winterhub --platforms android .
-          rm -f test/widget_test.dart
-          python3 tools/patch_android.py
-          flutter pub get
-          dart run flutter_launcher_icons || true
-      - name: Analyze
-        run: |
-          rc=0
-          flutter analyze --no-fatal-infos --no-fatal-warnings > analyze.txt 2>&1 || rc=$?
-          cat analyze.txt
-          python3 .winter/ci/annotate.py analyze.txt "analyze"
-          exit $rc
-      - name: Tests
-        run: |
-          set -o pipefail
-          if ls test/*_test.dart >/dev/null 2>&1; then
-            flutter test test 2>&1 | tee test.txt || { python3 .winter/ci/annotate.py test.txt "tests"; exit 1; }
-          else
-            echo "Тестов нет"
-          fi
-      - name: Build APK
-        run: |
-          set -o pipefail
-          flutter build apk --release --target-platform android-arm64 --dart-define=BUILD=${{ github.run_number }} --build-number=${{ github.run_number }} --build-name=1.0.${{ github.run_number }} 2>&1 | tee build.txt || { python3 .winter/ci/annotate.py build.txt "build"; exit 1; }
-          mkdir -p dist && cp build/app/outputs/flutter-apk/app-release.apk dist/Winter-Chat.apk
-      - name: Sign APK
-        env:
-          WINTER_SIGNING: ${{ secrets.WINTER_SIGNING }}
-        run: python3 .winter/ci/sign_apk.py dist/Winter-Chat.apk
-      - uses: actions/upload-artifact@v4
-        with:
-          name: android
-          path: dist/*
+  app:
+    needs: server
+    uses: Wateroflord/winter-hub/.github/workflows/flutter-app.yml@main
+    secrets: inherit
+    with:
+      project: winter_chat
+      org: com.winterhub
+      asset: Winter-Chat
+      title: Winter Chat
+      extra_artifact: server
+      notes: |
+        Linux: Winter-Chat-Linux.tar.gz (появится через несколько минут).
 
-  release:
-    needs: [server, android]
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/download-artifact@v4
-        with:
-          path: dist
-          merge-multiple: true
-      - name: Create release
-        run: |
-          ls -la dist
-          gh release create "build-${{ github.run_number }}" dist/* -R "${{ github.repository }}" \
-            --title "Winter Chat, сборка ${{ github.run_number }}" \
-            --notes "**Приложение:** телефон — Winter-Chat.apk, Windows — Winter-Chat-Setup.exe, Linux — Winter-Chat-Linux.tar.gz (установщики для ПК появятся через несколько минут). Удобнее ставить через Winter Hub.
-
-          **Сервер для ноутбука:** Winter-Chat-Server-Windows.zip или Winter-Chat-Server-Linux.tar.gz — распакуй и запусти, внутри есть инструкция." \
-            --latest
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-  windows:
-    needs: release
-    runs-on: windows-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Shared CI tools (winter-hub/ci)
-        uses: actions/checkout@v4
-        with:
-          repository: Wateroflord/winter-hub
-          path: .winter
-          sparse-checkout: /ci/
-          sparse-checkout-cone-mode: false
-      - uses: subosito/flutter-action@v2
-        with:
-          channel: stable
-          cache: true
-      - name: Create Windows project
-        shell: bash
-        run: |
-          flutter create --project-name winter_chat --org com.winterhub --platforms windows .
-          rm -f test/widget_test.dart
-          python tools/patch_windows.py
-          flutter pub get
-          dart run flutter_launcher_icons -f icons_windows.yaml || true
-      - name: Build Windows app
-        shell: bash
-        run: |
-          set -o pipefail
-          flutter build windows --release --dart-define=BUILD=${{ github.run_number }} --build-number=${{ github.run_number }} --build-name=1.0.${{ github.run_number }} 2>&1 | tee build.txt || { python3 .winter/ci/annotate.py build.txt "windows"; exit 1; }
-      - name: Build installer
-        shell: pwsh
-        env:
-          BUILD_NO: ${{ github.run_number }}
-        run: |
-          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
-          if (-not (Test-Path $iscc)) { choco install innosetup -y --no-progress | Out-Null }
-          & $iscc tools\installer.iss
-          if ($LASTEXITCODE -ne 0) { echo "::error title=installer::Inno Setup failed"; exit 1 }
-      - name: Attach to the release
-        shell: pwsh
-        run: |
-          gh release upload "build-${{ github.run_number }}" dist/Winter-Chat-Setup.exe --clobber
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        **Сервер для ноутбука:** Winter-Chat-Server-Windows.zip или Winter-Chat-Server-Linux.tar.gz — распакуй и запусти, внутри есть инструкция.
+      publish: ${{ github.event_name != 'workflow_dispatch' || inputs.publish }}
 
   linux:
-    needs: release
+    needs: app
+    if: github.event_name != 'workflow_dispatch' || inputs.publish
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -245,6 +148,7 @@ jobs:
       - uses: subosito/flutter-action@v2
         with:
           channel: stable
+          flutter-version: '3.47.9'
           cache: true
       - name: Create Linux project
         run: |
