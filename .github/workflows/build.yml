@@ -111,6 +111,11 @@ jobs:
         with:
           name: server
           path: dist/*
+      - name: Files for the Windows installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: server-windows-files
+          path: server/out/windows/
 
   app:
     needs: server
@@ -125,7 +130,8 @@ jobs:
       notes: |
         Linux: Winter-Chat-Linux.tar.gz (появится через несколько минут).
 
-        **Сервер для ноутбука:** Winter-Chat-Server-Windows.zip или Winter-Chat-Server-Linux.tar.gz — распакуй и запусти, внутри есть инструкция.
+        **Сервер для ноутбука:** `Winter-Chat-Server-Setup.exe` — установил, и сервер готов (появится через несколько минут; проще ставить через Winter Hub на ПК).
+        Без установки: Winter-Chat-Server-Windows.zip или Winter-Chat-Server-Linux.tar.gz — распакуй и запусти, внутри есть инструкция.
       publish: ${{ github.event_name != 'workflow_dispatch' || inputs.publish }}
 
   linux:
@@ -170,3 +176,99 @@ jobs:
           gh release upload "build-${{ github.run_number }}" Winter-Chat-Linux.tar.gz --clobber
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # Установщик сервера для Windows: запустил Setup.exe — сервер готов (брандмауэр, автозапуск, без окна).
+  server-installer:
+    needs: [server, app]
+    runs-on: windows-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: server-windows-files
+          path: pkg
+      - name: Build installer
+        shell: pwsh
+        env:
+          BUILD_NO: ${{ github.run_number }}
+        run: |
+          Get-ChildItem pkg
+          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $iscc)) { choco install innosetup -y --no-progress | Out-Null }
+          & $iscc tools\server\server-installer.iss
+          if ($LASTEXITCODE -ne 0) { echo "::error title=installer::Inno Setup failed"; exit 1 }
+          Get-ChildItem dist
+      - name: Check installer on Windows (install, start, second start, stop, uninstall)
+        shell: pwsh
+        timeout-minutes: 10
+        run: |
+          $ErrorActionPreference = 'Stop'
+          function Fail($m) { echo "::error title=server installer::$m"; $log = "$env:LOCALAPPDATA\Programs\Winter Chat Server\winter-chat-data\server.log"; if (Test-Path $log) { Get-Content $log -Tail 40 }; exit 1 }
+          function Up { try { (Invoke-RestMethod -TimeoutSec 3 http://127.0.0.1:8090/api/wc/info).app -eq 'winter-chat' } catch { $false } }
+          function WaitUp($want, $sec) { for ($i = 0; $i -lt $sec; $i++) { if ((Up) -eq $want) { return $true }; Start-Sleep 1 }; return $false }
+          # Ждём только сам процесс (Start-Process с ожиданием ждал бы ещё и запущенный им сервер).
+          function Run($file, $argv) { $p = Start-Process $file -ArgumentList $argv -PassThru; $null = $p.Handle; $p.WaitForExit(); return $p.ExitCode }
+          $silent = @('/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART')
+
+          $code = Run 'dist\Winter-Chat-Server-Setup.exe' $silent
+          if ($code -ne 0) { Fail "установщик завершился с кодом $code" }
+          $app = "$env:LOCALAPPDATA\Programs\Winter Chat Server"
+          $exe = "$app\winter-chat-server.exe"
+          foreach ($f in @($exe, "$app\livekit-server.exe", "$app\server-setup.cmd", "$app\server.ico")) { if (-not (Test-Path $f)) { Fail "нет файла $f" } }
+          $ver = (Get-ItemProperty 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\{326EC2C1-328E-40A2-AC0C-32F128771DD2}_is1').DisplayVersion
+          if ($ver -ne "1.0.${{ github.run_number }}") { Fail "в реестре версия '$ver' (хаб по ней видит установку)" }
+          if (-not (Test-Path "$([Environment]::GetFolderPath('Startup'))\Winter Chat Server.lnk")) { Fail "нет автозапуска" }
+          if (-not (Test-Path "$([Environment]::GetFolderPath('Desktop'))\Winter Chat Server.lnk")) { Fail "нет значка на рабочем столе" }
+          echo "Файлы, реестр и ярлыки на месте (версия $ver)"
+
+          if (-not (WaitUp $true 90)) { Fail "после тихой установки сервер не запустился" }
+          echo "Сервер запустился сам после установки"
+          netsh advfirewall firewall show rule name="Winter Chat Server" | Out-Host
+          if ($LASTEXITCODE -ne 0) { echo "::warning title=server installer::правило брандмауэра не создано (на сборочном сервере UAC может быть устроен иначе)" } else { echo "Брандмауэр настроен" }
+
+          $code = Run $exe @('--background', '--no-browser')
+          if ($code -ne 0) { Fail "второй запуск завершился с кодом $code" }
+          if (-not (Up)) { Fail "второй запуск сломал работающий сервер" }
+          echo "Второй запуск не мешает работающему серверу"
+
+          $code = Run $exe @('--stop')
+          if ($code -ne 0) { Fail "--stop завершился с кодом $code" }
+          if (-not (WaitUp $false 15)) { Fail "сервер не выключился по --stop" }
+          Start-Sleep 2
+          if (Get-Process livekit-server -ErrorAction SilentlyContinue) { Fail "после выключения остался livekit-server" }
+          echo "Выключение работает"
+
+          # Обновление поверх (как из хаба): сервер снова должен подняться, данные остаться.
+          Start-Process $exe -ArgumentList '--background','--no-browser'
+          if (-not (WaitUp $true 60)) { Fail "сервер не запустился ярлыком" }
+          $invite = (Get-Content "$app\winter-chat-data\server.json" | ConvertFrom-Json).inviteCode
+          $code = Run 'dist\Winter-Chat-Server-Setup.exe' $silent
+          if ($code -ne 0) { Fail "обновление завершилось с кодом $code" }
+          if (-not (WaitUp $true 90)) { Fail "после обновления сервер не запустился" }
+          $invite2 = (Get-Content "$app\winter-chat-data\server.json" | ConvertFrom-Json).inviteCode
+          if ($invite -ne $invite2) { Fail "после обновления сменились данные сервера" }
+          echo "Обновление поверх работает, данные на месте"
+
+          $un = (Get-ItemProperty 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\{326EC2C1-328E-40A2-AC0C-32F128771DD2}_is1').UninstallString.Trim('"')
+          $null = Run $un $silent
+          # Деинсталлятор Inno перезапускает себя из временной папки — ждём, пока программа исчезнет.
+          for ($i = 0; $i -lt 60 -and (Test-Path $exe); $i++) { Start-Sleep 1 }
+          Start-Sleep 2
+          if (Up) { Fail "после удаления сервер всё ещё работает" }
+          if (Test-Path $exe) { Fail "после удаления осталась программа" }
+          if (-not (Test-Path "$app\winter-chat-data\server.json")) { Fail "удаление стёрло данные сервера" }
+          if (Test-Path "$([Environment]::GetFolderPath('Startup'))\Winter Chat Server.lnk") { Fail "после удаления остался автозапуск" }
+          echo "Удаление работает, данные остались"
+      - name: Attach to the release
+        if: github.event_name != 'workflow_dispatch' || inputs.publish
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release upload "build-${{ github.run_number }}" dist/Winter-Chat-Server-Setup.exe --clobber
+      - name: Files (test build, no release)
+        if: github.event_name == 'workflow_dispatch' && !inputs.publish
+        uses: actions/upload-artifact@v4
+        with:
+          name: server-installer
+          path: dist/Winter-Chat-Server-Setup.exe

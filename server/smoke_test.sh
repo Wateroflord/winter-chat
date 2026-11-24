@@ -139,4 +139,20 @@ for i in $(seq 1 8); do
 done
 [ "$limited" = "1" ] || fail "перебор кода приглашения не ограничен"
 ok "перебор кода приглашения ограничен"
+# Запуск в один клик: второй запуск не мешает работающему серверу, «--stop» его выключает
+timeout 20 ./winter-chat-server --no-browser > /tmp/second.log 2>&1 || fail "второй запуск завершился с ошибкой: $(cat /tmp/second.log)"
+grep -q "уже работает" /tmp/second.log || fail "второй запуск не заметил работающий сервер: $(cat /tmp/second.log)"
+curl -sf $B/api/wc/info >/dev/null || fail "второй запуск сломал сервер"
+ok "второй запуск только открывает панель"
+for h in "Origin: https://evil.example" "Sec-Fetch-Site: cross-site" "X-Forwarded-For: 8.8.8.8"; do
+  code=$(curl -s -o /dev/null -w '%{http_code}' -X POST $B/api/wc/panel/stop -H "$h")
+  [ "$code" = "403" ] || fail "сервер можно выключить при заголовке '$h' ($code)"
+done
+curl -sf $B/api/wc/info >/dev/null || fail "сервер выключился от чужого запроса"
+timeout 30 ./winter-chat-server --stop > /tmp/stop.log 2>&1 || fail "--stop: $(cat /tmp/stop.log)"
+alive() { st=$(ps -o stat= -p "$1" 2>/dev/null | tr -d ' '); [ -n "$st" ] && [ "${st#Z}" = "$st" ]; }
+for i in $(seq 1 20); do alive $PID || break; sleep 0.5; done
+alive $PID && fail "сервер не выключился по --stop"
+pgrep -f "livekit-server --config" >/dev/null && fail "после выключения остался livekit-server"
+ok "«--stop» выключает сервер вместе со звонками"
 echo "ВСЕ ПРОВЕРКИ ПРОЙДЕНЫ"

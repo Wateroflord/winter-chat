@@ -23,6 +23,8 @@
   .ok { color: var(--good); } .warn { color: var(--warn); } .bad { color: var(--bad); }
   button { background: var(--s2); color: var(--t); border:1px solid var(--b); border-radius: 10px; padding: 6px 12px; cursor: pointer; font: inherit; font-size: 13px; }
   button:hover { border-color: var(--ice); }
+  button.danger { color: var(--bad); border-color: rgba(255,107,138,.45); }
+  button.danger:hover { border-color: var(--bad); }
   .copy { margin-left: 6px; }
   .full { grid-column: 1 / -1; }
   table { width:100%; border-collapse: collapse; }
@@ -46,6 +48,7 @@
       <div class="muted" id="callsErr"></div>
       <div class="row"><span>Пользователей</span><b id="nUsers">0</b></div>
       <div class="row"><span>Чатов / сообщений</span><b id="nChats">0</b></div>
+      <div style="margin-top:12px"><button class="danger" onclick="stopServer()">Выключить сервер</button></div>
     </div>
 
     <div class="card">
@@ -75,7 +78,7 @@
         <li>Зайди в настройки роутера и открой (пробрось) порты на этот компьютер (<span class="mono" id="lanMain">—</span>):
           <table style="margin:8px 0"><thead><tr><th>Порт</th><th>Протокол</th><th>Для чего</th></tr></thead><tbody id="ports"></tbody></table>
         </li>
-        <li>Если Windows спросит про брандмауэр для Winter Chat Server и livekit-server — нажми «Разрешить».</li>
+        <li>Брандмауэр Windows установщик настраивает сам. Если сервер запущен не из установщика и Windows спросит про Winter Chat Server и livekit-server — нажми «Разрешить».</li>
         <li>Дай друзьям адрес <b class="mono" id="pubAddr">—</b> и код приглашения.</li>
         <li>Если у провайдера нет «белого» IP, поставь всем бесплатный VPN (Tailscale, ZeroTier или Radmin VPN) — его адрес появится в списке выше.</li>
       </ol>
@@ -107,7 +110,9 @@ async function load() {
     const r = await fetch('/api/wc/panel'); state = await r.json();
   } catch (e) { $('sub').textContent = 'Сервер не отвечает'; return; }
   const s = state;
-  $('sub').textContent = 'Версия ' + s.version + ' · окно сервера должно оставаться открытым';
+  $('sub').textContent = 'Версия ' + s.version + (s.background
+    ? ' · сервер работает в фоне, эту вкладку можно закрыть'
+    : ' · окно сервера должно оставаться открытым');
   $('calls').innerHTML = s.calls ? '<span class="ok"><span class="dot" style="background:var(--good)"></span>работают</span>' : '<span class="bad"><span class="dot" style="background:var(--bad)"></span>не работают</span>';
   $('callsErr').textContent = s.calls ? '' : (s.callsError || 'запускаются…');
   $('nUsers').textContent = (s.users || []).length;
@@ -139,7 +144,16 @@ async function resetPass(id, name) {
   const r = await fetch('/api/wc/panel/password', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({id, password:p})});
   const j = await r.json(); alert(r.ok ? 'Пароль изменён' : (j.message || 'Ошибка'));
 }
-load(); setInterval(load, 5000);
+let timer = null;
+async function stopServer() {
+  if (!confirm('Выключить сервер? Пока он выключен, друзья не смогут писать и звонить.')) return;
+  clearInterval(timer);
+  try { await fetch('/api/wc/panel/stop', {method:'POST'}); } catch (e) {}
+  document.querySelector('.wrap').innerHTML = '<h1>❄ Winter <span>Chat</span> Server</h1>' +
+    '<div class="card" style="margin-top:18px"><h2>Сервер выключен</h2>' +
+    '<div>Запустить снова — ярлык <b>Winter Chat Server</b> на рабочем столе или в меню «Пуск».</div></div>';
+}
+load(); timer = setInterval(load, 5000);
 </script>
 </body>
 </html>

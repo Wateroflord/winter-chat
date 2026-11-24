@@ -121,6 +121,18 @@ func registerRoutes(app core.App) {
 			saveConfig()
 			return e.JSON(http.StatusOK, map[string]any{"invite": cfg.InviteCode})
 		})
+		// Выключить сервер (кнопка в панели и «winter-chat-server --stop»).
+		r.POST("/api/wc/panel/stop", func(e *core.RequestEvent) error {
+			if !isLocalRequest(e.Request) {
+				return e.ForbiddenError("", nil)
+			}
+			app := e.App
+			go func() {
+				time.Sleep(400 * time.Millisecond) // успеть ответить панели
+				shutdownServer(app)
+			}()
+			return e.JSON(http.StatusOK, map[string]any{"ok": true})
+		})
 		r.POST("/api/wc/panel/password", func(e *core.RequestEvent) error {
 			if !isLocalRequest(e.Request) {
 				return e.ForbiddenError("", nil)
@@ -229,6 +241,7 @@ func panelData(app core.App) map[string]any {
 		"chats":         chats,
 		"messages":      msgs,
 		"dataDir":       dataDir,
+		"background":    background,
 		"ports": []map[string]any{
 			{"port": HTTPPort, "proto": "TCP", "what": "приложение, чаты, файлы"},
 			{"port": RTCTCPPort, "proto": "TCP", "what": "звонки (запасной путь)"},
@@ -308,7 +321,11 @@ func printBanner(noBrowser bool) {
 		fmt.Println("  ВНИМАНИЕ (звонки):", firstNonEmpty(lastErr, "livekit-server не найден"))
 	}
 	fmt.Println()
-	fmt.Println("  Не закрывай это окно — иначе сервер выключится.")
+	if background {
+		fmt.Println("  Сервер работает в фоне. Выключить — кнопкой в панели.")
+	} else {
+		fmt.Println("  Не закрывай это окно — иначе сервер выключится.")
+	}
 	fmt.Println(line)
 	fmt.Println()
 	if !noBrowser {

@@ -54,17 +54,41 @@ func main() {
 	if err := os.MkdirAll(dataDir, 0o755); err != nil {
 		log.Fatalf("Не удалось создать папку %s: %v", dataDir, err)
 	}
-	loadOrCreateConfig()
 
-	noBrowser := false
+	noBrowser, stop := false, false
 	var rest []string
 	for _, a := range os.Args[1:] {
-		if a == "--no-browser" {
+		switch a {
+		case "--no-browser":
 			noBrowser = true
-			continue
+		case "--background": // без чёрного окна: ярлык, автозапуск
+			background = true
+		case "--stop": // выключить уже работающий сервер
+			stop = true
+		default:
+			rest = append(rest, a)
 		}
-		rest = append(rest, a)
 	}
+	if stop {
+		os.Exit(stopRunningServer())
+	}
+	// Сервер уже работает (например, из автозапуска) — просто открываем панель.
+	if len(rest) == 0 && serverRunning() {
+		fmt.Println("Сервер уже работает — открываю панель", panelURL())
+		if !noBrowser {
+			openBrowser(panelURL())
+		}
+		return
+	}
+	// Запустили без окна (кнопка «Открыть» в Winter Hub) — тоже фоновый режим.
+	if !background && noConsole() {
+		background = true
+	}
+	if background {
+		startBackgroundMode()
+	}
+	loadOrCreateConfig()
+
 	// Двойной клик по программе = запуск сервера.
 	if len(rest) == 0 {
 		// --origins: браузерным страницам с чужих сайтов запрещено читать ответы сервера
@@ -120,11 +144,20 @@ func main() {
 	})
 
 	if err := app.Start(); err != nil {
-		log.Println("Ошибка:", err)
 		lk.Stop()
-		pauseOnWindows()
+		failAndWait(err)
 		os.Exit(1)
 	}
+}
+
+// shutdownServer — кнопка «Выключить сервер» в панели (и ярлык «Выключить»).
+func shutdownServer(app core.App) {
+	log.Println("Сервер выключается по команде из панели.")
+	if theLiveKit != nil {
+		theLiveKit.Stop()
+	}
+	_ = app.ResetBootstrapState() // закрыть базу
+	os.Exit(0)
 }
 
 func programDir() string {
