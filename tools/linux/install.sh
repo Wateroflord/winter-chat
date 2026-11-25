@@ -22,3 +22,4 @@ printf '%s\n' \
 update-desktop-database "$HOME/.local/share/applications" 2>/dev/null || true
 echo "Готово! Winter Chat появился в меню приложений."
 echo "Для выбора файлов нужен zenity (обычно уже есть): sudo apt install zenity"
+echo "Для видео в чате нужен libmpv: sudo apt install libmpv2 (на старых системах — libmpv1)"

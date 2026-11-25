@@ -7,6 +7,8 @@ import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'settings.dart';
+
 /// Уведомления о новых сообщениях, когда приложение закрыто или свёрнуто (Android).
 ///
 /// Раз в 15 минут (чаще Android не разрешает) фоновая задача спрашивает сервер
@@ -87,6 +89,9 @@ class BgNotify {
     final server = p.getString('server') ?? '';
     final auth = p.getString('auth');
     if (bgSince == null || server.isEmpty || auth == null) return;
+    // Настройки → «Уведомления и звуки».
+    if (!(p.getBool(Settings.kNotify) ?? true) || Settings.dndActive(p)) return;
+    final withSound = p.getBool(Settings.kNotifySound) ?? true;
     final a = jsonDecode(auth) as Map;
     final token = '${a['token'] ?? ''}';
     final myId = '${(a['record'] as Map?)?['id'] ?? (a['model'] as Map?)?['id'] ?? ''}';
@@ -101,8 +106,11 @@ class BgNotify {
     await p.setString(kLastNotified, '${items.first['created']}');
     await _initPlugin();
     final list = format(res);
-    final details = const NotificationDetails(
-      android: AndroidNotificationDetails('messages', 'Сообщения', importance: Importance.high, priority: Priority.high),
+    final details = NotificationDetails(
+      android: withSound
+          ? const AndroidNotificationDetails('messages', 'Сообщения', importance: Importance.high, priority: Priority.high)
+          : const AndroidNotificationDetails('messages_silent', 'Сообщения без звука',
+              importance: Importance.defaultImportance, priority: Priority.defaultPriority, playSound: false, enableVibration: false),
     );
     if (list.length > 3) {
       await _n.show(_alarmId, 'Winter Chat', 'Новых сообщений: ${list.length}', details);

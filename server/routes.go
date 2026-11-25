@@ -1,7 +1,9 @@
 package main
 
 import (
+	"crypto/sha256"
 	_ "embed"
+	"encoding/hex"
 	"fmt"
 	"net"
 	"net/http"
@@ -38,6 +40,11 @@ func registerRoutes(app core.App) {
 				"version": Version,
 				"calls":   running,
 				"arc":     arcInfo(),
+				// Чтобы приложение отличало этот сервер от других и знало его
+				// запасные адреса в Winter VPN / Radmin (если основной не отвечает).
+				"id":        serverID(),
+				"port":      HTTPPort,
+				"addresses": vpnAddresses(),
 			})
 		})
 
@@ -250,6 +257,23 @@ func panelData(app core.App) map[string]any {
 	}
 }
 
+// serverID — постоянный короткий номер сервера (из секрета LiveKit, сам секрет не раскрывает).
+func serverID() string {
+	sum := sha256.Sum256([]byte("winter-chat-server:" + cfg.LKSecret))
+	return hex.EncodeToString(sum[:6])
+}
+
+// vpnAddresses — адреса этого компьютера в Winter VPN, Radmin и ZeroTier (без домашней сети).
+func vpnAddresses() []map[string]string {
+	out := []map[string]string{}
+	for _, a := range lanIPs() {
+		if a["kind"] != "домашняя сеть" && a["kind"] != "сеть" {
+			out = append(out, map[string]string{"ip": a["ip"], "kind": a["kind"]})
+		}
+	}
+	return out
+}
+
 func isIPv4(s string) bool {
 	ip := net.ParseIP(s)
 	return ip != nil && ip.To4() != nil
@@ -276,8 +300,13 @@ func lanIPs() []map[string]string {
 			kind := "сеть"
 			lname := strings.ToLower(ifc.Name)
 			switch {
+			case strings.Contains(lname, "winter"):
+				kind = "Winter VPN"
 			case strings.Contains(lname, "tailscale") || (ip[0] == 100 && ip[1] >= 64 && ip[1] <= 127):
-				kind = "Tailscale"
+				kind = "Winter VPN"
+				if strings.Contains(lname, "tailscale") {
+					kind = "Winter VPN (Tailscale)"
+				}
 			case strings.Contains(lname, "zt") || strings.Contains(lname, "zerotier"):
 				kind = "ZeroTier"
 			case ip[0] == 26:

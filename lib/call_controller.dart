@@ -8,6 +8,7 @@ import 'package:flutter_webrtc/flutter_webrtc.dart' as rtc;
 import 'package:livekit_client/livekit_client.dart';
 
 import 'api.dart';
+import 'settings.dart';
 
 /// Один активный звонок на всё приложение.
 class CallController extends ChangeNotifier {
@@ -32,6 +33,24 @@ class CallController extends ChangeNotifier {
   bool get screenOn => local?.isScreenShareEnabled() ?? false;
 
   bool get isAndroid => !kIsWeb && Platform.isAndroid;
+
+  /// Микрофон и обработка звука — из настроек.
+  AudioCaptureOptions get audioOptions {
+    final s = Settings.I;
+    return AudioCaptureOptions(
+      deviceId: s.micId.isEmpty ? null : s.micId,
+      noiseSuppression: s.noiseSuppression,
+      echoCancellation: s.echoCancellation,
+      autoGainControl: s.autoGain,
+    );
+  }
+
+  /// Качество камеры из настроек.
+  VideoParameters get cameraParams => switch (Settings.I.cameraQuality) {
+        0 => VideoParametersPresets.h540_169,
+        2 => VideoParametersPresets.h1080_169,
+        _ => VideoParametersPresets.h720_169,
+      };
   bool get isDesktop => !kIsWeb && (Platform.isWindows || Platform.isLinux || Platform.isMacOS);
 
   Future<void> join(String chatId, String title, {bool withCamera = false}) async {
@@ -45,22 +64,21 @@ class CallController extends ChangeNotifier {
     Room? r;
     try {
       final t = await Api.I.callToken(chatId);
+      final s = Settings.I;
       r = Room(
-        roomOptions: const RoomOptions(
+        roomOptions: RoomOptions(
           adaptiveStream: true,
           dynacast: true,
-          defaultAudioCaptureOptions: AudioCaptureOptions(
-            noiseSuppression: true,
-            echoCancellation: true,
-            autoGainControl: true,
-          ),
+          defaultAudioCaptureOptions: audioOptions,
           defaultCameraCaptureOptions: CameraCaptureOptions(
-            params: VideoParametersPresets.h720_169,
+            deviceId: s.cameraId.isEmpty ? null : s.cameraId,
+            params: cameraParams,
           ),
-          defaultScreenShareCaptureOptions: ScreenShareCaptureOptions(
+          defaultScreenShareCaptureOptions: const ScreenShareCaptureOptions(
             params: VideoParametersPresets.screenShareH1080FPS15,
           ),
-          defaultVideoPublishOptions: VideoPublishOptions(simulcast: true),
+          defaultAudioOutputOptions: AudioOutputOptions(deviceId: s.speakerId.isEmpty ? null : s.speakerId),
+          defaultVideoPublishOptions: const VideoPublishOptions(simulcast: true),
         ),
       );
       final l = r.createListener();
@@ -154,11 +172,13 @@ class CallController extends ChangeNotifier {
 
   Future<void> toggleCamera() async {
     try {
+      final camId = Settings.I.cameraId;
       await local?.setCameraEnabled(
         !camOn,
         cameraCaptureOptions: CameraCaptureOptions(
           cameraPosition: cameraPosition,
-          params: VideoParametersPresets.h720_169,
+          deviceId: camId.isEmpty || !isDesktop ? null : camId,
+          params: cameraParams,
         ),
       );
     } catch (e) {

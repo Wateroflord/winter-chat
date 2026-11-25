@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../api.dart';
 import '../theme.dart';
+import 'settings_screen.dart' show VpnHint;
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -196,6 +197,10 @@ class _LoginScreenState extends State<LoginScreen> {
                           ),
                           child: Text(_error!, style: const TextStyle(color: W.bad)),
                         ),
+                        if (_error!.contains('подключиться') || _error!.contains('не отвечает') || _error!.contains('Нет связи')) ...[
+                          const SizedBox(height: 10),
+                          VpnHint(key: ValueKey(_server.text), serverText: _server.text),
+                        ],
                       ],
                       const SizedBox(height: 18),
                       FilledButton(

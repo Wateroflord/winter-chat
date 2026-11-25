@@ -17,6 +17,14 @@ class Api extends ChangeNotifier {
   PocketBase? _pb;
   String serverUrl = '';
 
+  /// Адрес, который ввёл пользователь при входе (serverUrl может временно
+  /// переключиться на запасной — например, адрес в Winter VPN).
+  String primaryUrl = '';
+
+  /// Запасные адреса того же сервера (в Winter VPN, Radmin и т.п.), их сообщает сам сервер.
+  List<String> altUrls = [];
+  String serverId = '';
+
   /// Все пользователи сервера (для имён и аватарок).
   final Map<String, RecordModel> users = {};
 
@@ -29,6 +37,9 @@ class Api extends ChangeNotifier {
   Future<void> init() async {
     prefs = await SharedPreferences.getInstance();
     serverUrl = prefs.getString('server') ?? '';
+    primaryUrl = prefs.getString('server_primary') ?? serverUrl;
+    altUrls = prefs.getStringList('server_alts') ?? [];
+    serverId = prefs.getString('server_id') ?? '';
     if (serverUrl.isNotEmpty) _makeClient();
   }
 
@@ -63,10 +74,12 @@ class Api extends ChangeNotifier {
   Future<void> _useServer(String input) async {
     final url = normalizeUrl(input);
     if (url.isEmpty) throw 'Введи адрес сервера';
+    Map? info;
     try {
       final res = await http.get(Uri.parse('$url/api/wc/info')).timeout(const Duration(seconds: 8));
       final j = jsonDecode(res.body);
       if (j is! Map || j['app'] != 'winter-chat') throw 'not winter';
+      info = j;
     } on TimeoutException {
       throw 'Сервер не отвечает. Проверь адрес и что сервер запущен на ноутбуке.';
     } catch (e) {
@@ -80,6 +93,112 @@ class Api extends ChangeNotifier {
       await prefs.remove('auth');
       _makeClient();
     }
+    primaryUrl = url;
+    await prefs.setString('server_primary', url);
+    await _saveInfo(info);
+  }
+
+  // ---------- запасные адреса (Winter VPN) ----------
+
+  Future<void> _saveInfo(Map? j) async {
+    if (j == null) return;
+    final id = '${j['id'] ?? ''}';
+    final port = int.tryParse('${j['port'] ?? ''}') ?? defaultPort;
+    final alts = <String>[];
+    final list = j['addresses'];
+    if (list is List) {
+      for (final a in list.whereType<Map>()) {
+        final ip = '${a['ip'] ?? ''}';
+        if (ip.isNotEmpty) alts.add('http://$ip:$port');
+      }
+    }
+    serverId = id;
+    altUrls = alts;
+    await prefs.setString('server_id', id);
+    await prefs.setStringList('server_alts', alts);
+  }
+
+  /// Обновить список запасных адресов с сервера (тихо).
+  Future<void> refreshInfo() async {
+    if (serverUrl.isEmpty) return;
+    try {
+      final res = await http.get(Uri.parse('$serverUrl/api/wc/info')).timeout(const Duration(seconds: 6));
+      final j = jsonDecode(res.body);
+      if (j is Map && j['app'] == 'winter-chat') {
+        final id = '${j['id'] ?? ''}';
+        if (serverId.isNotEmpty && id.isNotEmpty && id != serverId) return; // другой сервер — не трогаем
+        await _saveInfo(j);
+        notifyListeners();
+      }
+    } catch (_) {}
+  }
+
+  /// Все известные адреса этого сервера: основной + запасные.
+  List<String> get knownUrls => {primaryUrl, ...altUrls, serverUrl}.where((u) => u.isNotEmpty).toList();
+
+  Future<bool> isSameServer(String url) async {
+    try {
+      final res = await http.get(Uri.parse('$url/api/wc/info')).timeout(const Duration(seconds: 4));
+      final j = jsonDecode(res.body);
+      if (j is! Map || j['app'] != 'winter-chat') return false;
+      final id = '${j['id'] ?? ''}';
+      return serverId.isEmpty || id.isEmpty || id == serverId;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// Переключиться на другой адрес того же сервера, не выходя из аккаунта.
+  Future<void> switchTo(String url) async {
+    if (url == serverUrl) return;
+    serverUrl = url;
+    await prefs.setString('server', url);
+    _makeClient();
+    notifyListeners();
+  }
+
+  bool _failing = false;
+  DateTime _lastFailover = DateTime(2000);
+
+  /// Сервер не отвечает — попробовать запасные адреса (например, через Winter VPN).
+  /// true — переключились на работающий адрес.
+  Future<bool> failover() async {
+    final now = DateTime.now();
+    if (_failing || now.difference(_lastFailover) < const Duration(seconds: 20)) return false;
+    _failing = true;
+    _lastFailover = now;
+    try {
+      final cands = knownUrls.where((u) => u != serverUrl).toList();
+      for (final u in cands) {
+        if (await isSameServer(u)) {
+          await switchTo(u);
+          return true;
+        }
+      }
+      return false;
+    } finally {
+      _failing = false;
+    }
+  }
+
+  // ---------- аккаунт ----------
+
+  Future<void> changePassword(String oldPassword, String newPassword) async {
+    final username = me.getStringValue('username');
+    try {
+      await pb.collection('users').update(myId, body: {
+        'oldPassword': oldPassword,
+        'password': newPassword,
+        'passwordConfirm': newPassword,
+      });
+    } catch (e) {
+      throw errorText(e, fallback: 'Не удалось сменить пароль');
+    }
+    // После смены пароля старый вход перестаёт действовать — входим заново.
+    try {
+      await pb.collection('users').authWithPassword(username, newPassword);
+    } catch (_) {}
+    notifyListeners();
   }
 
   Future<void> login(String server, String username, String password) async {
@@ -124,6 +243,7 @@ class Api extends ChangeNotifier {
     try {
       await loadUsers();
     } catch (_) {}
+    unawaited(refreshInfo());
     notifyListeners();
   }
 
@@ -260,6 +380,7 @@ class Api extends ChangeNotifier {
     final f = switch (field) {
       'username' => 'Логин',
       'password' => 'Пароль',
+      'oldPassword' => 'Старый пароль',
       'passwordConfirm' => 'Пароль',
       'name' => 'Имя',
       'identity' => 'Логин',
@@ -269,6 +390,7 @@ class Api extends ChangeNotifier {
     };
     final m = switch (code) {
       'validation_not_unique' => 'уже занят',
+      'validation_invalid_old_password' => 'неверный',
       'validation_min_text_constraint' || 'validation_length_out_of_range' => field.startsWith('password')
           ? 'минимум 8 символов'
           : 'слишком короткий (минимум 3 символа)',

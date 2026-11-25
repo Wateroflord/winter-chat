@@ -21,19 +21,36 @@ class Store extends ChangeNotifier {
   /// Новые звонки, в которых меня ещё нет.
   Stream<RecordModel> get incomingCalls => _incoming.stream;
 
+  final _newMessages = StreamController<String>.broadcast();
+
+  /// Пришло чужое сообщение (id чата) — для звука.
+  Stream<String> get newMessages => _newMessages.stream;
+
   final List<UnsubscribeFunc> _unsubs = [];
   Timer? _timer;
 
   PocketBase get _pb => Api.I.pb;
 
+  int _gen = 0;
+
   Future<void> start() async {
-    await stop();
+    final gen = ++_gen;
+    await _stop();
     await refresh();
+    // Пока ждали ответа, могли переключиться на запасной адрес и запуститься заново.
+    if (gen != _gen) return;
     await _subscribe();
+    if (gen != _gen) return;
+    _timer?.cancel();
     _timer = Timer.periodic(const Duration(seconds: 45), (_) => refresh(silent: true));
   }
 
-  Future<void> stop() async {
+  Future<void> stop() {
+    _gen++;
+    return _stop();
+  }
+
+  Future<void> _stop() async {
     _timer?.cancel();
     _timer = null;
     for (final u in _unsubs) {
@@ -64,6 +81,12 @@ class Store extends ChangeNotifier {
       online = false;
       if (!silent || !loaded) error = Api.errorText(e, fallback: 'Нет связи с сервером');
       loaded = true;
+      notifyListeners();
+      // Основной адрес не отвечает — пробуем запасные (например, через Winter VPN).
+      if (await Api.I.failover()) {
+        await start();
+      }
+      return;
     }
     notifyListeners();
   }
@@ -73,9 +96,15 @@ class Store extends ChangeNotifier {
       _unsubs.add(await _pb.collection('chats').subscribe('*', (e) {
         final r = e.record;
         if (r == null) return;
+        final before = chat(r.id);
         chats.removeWhere((c) => c.id == r.id);
         if (e.action != 'delete' && r.getListValue<String>('members').contains(Api.I.myId)) {
           chats.add(r);
+          final at = r.getStringValue('last_at');
+          final was = before?.getStringValue('last_at') ?? '';
+          if (at.isNotEmpty && at.compareTo(was) > 0 && r.getStringValue('last_author') != Api.I.myId) {
+            _newMessages.add(r.id);
+          }
         }
         _sort();
         notifyListeners();
