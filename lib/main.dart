@@ -17,7 +17,7 @@ const buildNumber = String.fromEnvironment('BUILD', defaultValue: 'dev');
 
 List<String> _args = const [];
 
-Future<void> main(List<String> args) {
+Future<void> main([List<String> args = const []]) {
   _args = args;
   return runWinterApp(repo: 'winter-chat', appName: 'Winter Chat', body: _main);
 }
