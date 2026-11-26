@@ -895,8 +895,20 @@ class _NetworkSectionState extends State<_NetworkSection> {
   @override
   void initState() {
     super.initState();
+    // Список адресов приходит с сервера чуть позже — перерисоваться, когда придёт.
+    Api.I.addListener(_apiChanged);
     _scan();
     Api.I.refreshInfo();
+  }
+
+  @override
+  void dispose() {
+    Api.I.removeListener(_apiChanged);
+    super.dispose();
+  }
+
+  void _apiChanged() {
+    if (mounted) setState(() {});
   }
 
   Future<void> _scan() async {

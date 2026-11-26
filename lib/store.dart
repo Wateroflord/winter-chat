@@ -39,6 +39,9 @@ class Store extends ChangeNotifier {
     await refresh();
     // Пока ждали ответа, могли переключиться на запасной адрес и запуститься заново.
     if (gen != _gen) return;
+    // Запасные адреса сервера (Winter VPN и т.п.) — узнаём сразу при запуске,
+    // чтобы переключиться на них, если основной адрес перестанет отвечать.
+    if (online) unawaited(Api.I.refreshInfo());
     await _subscribe();
     if (gen != _gen) return;
     _timer?.cancel();
