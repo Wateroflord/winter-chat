@@ -105,6 +105,7 @@ func main() {
 
 	registerHooks(app)
 	registerArcHooks(app)
+	registerGamesHooks(app)
 	registerRoutes(app)
 
 	lk := newLiveKit(app)
@@ -122,6 +123,9 @@ func main() {
 		if err := ensureArcSchema(se.App); err != nil {
 			return fmt.Errorf("подготовка Winter Arc: %w", err)
 		}
+		if err := ensureGamesSchema(se.App); err != nil {
+			return fmt.Errorf("подготовка игр: %w", err)
+		}
 		if err := ensureSuperuser(se.App); err != nil {
 			return fmt.Errorf("создание администратора: %w", err)
 		}
@@ -129,6 +133,8 @@ func main() {
 			return fmt.Errorf("настройка защиты от перебора: %w", err)
 		}
 		clearCalls(se.App)
+		cleanupGames(se.App)
+		se.App.Cron().MustAdd("winter-games-cleanup", "*/10 * * * *", func() { cleanupGames(se.App) })
 
 		if err := se.Next(); err != nil {
 			return err

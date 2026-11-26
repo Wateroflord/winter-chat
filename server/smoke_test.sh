@@ -96,6 +96,46 @@ n=$(curl -s "$B/api/collections/arc_scores/records" | jq '.items|length')
 [ "$(curl -s -X POST $B/api/wc/panel/arc-restart | jq -r .start)" = "$TODAY" ] || fail "перезапуск Winter Arc"
 ok "Winter Arc: очки, защита, рейтинг"
 
+# --- Игры с друзьями: шахматы и гонка в сапёр ---
+curl -s $B/api/wc/info | jq -e '.games.kinds|index("chess")' >/dev/null || fail "сервер не сообщает об играх"
+J='Content-Type: application/json'
+G=$(curl -s -X POST $B/api/collections/games/records -H "Authorization: $T1" -H "$J" \
+  -d "{\"kind\":\"chess\",\"host\":\"$U2\",\"status\":\"done\",\"state\":{\"hostWhite\":true,\"moves\":[]}}" | tee /dev/stderr)
+GID=$(echo "$G" | jq -r .id)
+[ "$(echo "$G" | jq -r .host)" = "$U1" ] && [ "$(echo "$G" | jq -r .status)" = "open" ] || fail "приглашение в шахматы: $G"
+n=$(curl -s "$B/api/collections/games/records?filter=status='open'" -H "Authorization: $T2" | jq '.items|length')
+[ "$n" = "1" ] || fail "друг не видит открытое приглашение ($n)"
+J1=$(curl -s -X PATCH $B/api/collections/games/records/$GID -H "Authorization: $T2" -H "$J" -d '{"state":{"moves":["e2e4"]}}' | tee /dev/stderr)
+[ "$(echo "$J1" | jq -r .status)" = "playing" ] && [ "$(echo "$J1" | jq -r .guest)" = "$U2" ] || fail "принять приглашение: $J1"
+[ "$(echo "$J1" | jq -c .state.moves)" = "[]" ] || fail "при входе гость поменял партию"
+code=$(curl -s -o /dev/null -w '%{http_code}' -X PATCH $B/api/collections/games/records/$GID -H "Authorization: $T3" -H "$J" -d '{"seq":2}')
+[ "$code" != "200" ] || fail "посторонний вмешался в партию"
+M1=$(curl -s -X PATCH $B/api/collections/games/records/$GID -H "Authorization: $T1" -H "$J" -d '{"seq":2,"state":{"hostWhite":true,"moves":["e2e4"]}}')
+[ "$(echo "$M1" | jq -r .seq)" = "2" ] || fail "ход: $M1"
+code=$(curl -s -o /dev/null -w '%{http_code}' -X PATCH $B/api/collections/games/records/$GID -H "Authorization: $T2" -H "$J" -d '{"seq":2,"state":{"hostWhite":true,"moves":["e2e4","e7e5"]}}')
+[ "$code" = "400" ] || fail "ход по устаревшей партии принят ($code)"
+M2=$(curl -s -X PATCH $B/api/collections/games/records/$GID -H "Authorization: $T2" -H "$J" -d "{\"seq\":3,\"status\":\"done\",\"winner\":\"$U1\",\"result\":\"resign\"}")
+[ "$(echo "$M2" | jq -r .winner)" = "$U1" ] && [ "$(echo "$M2" | jq -r .status)" = "done" ] || fail "сдаться: $M2"
+code=$(curl -s -o /dev/null -w '%{http_code}' -X PATCH $B/api/collections/games/records/$GID -H "Authorization: $T1" -H "$J" -d '{"seq":4,"status":"playing"}')
+[ "$code" = "400" ] || fail "законченную партию можно продолжить ($code)"
+ok "шахматы с другом: приглашение, ходы, защита от устаревших ходов"
+
+R=$(curl -s -X POST $B/api/collections/games/records -H "Authorization: $T1" -H "$J" \
+  -d "{\"kind\":\"mines\",\"guest\":\"$U2\",\"state\":{\"level\":\"easy\",\"seed\":42}}")
+RID=$(echo "$R" | jq -r .id)
+n=$(curl -s "$B/api/collections/games/records?filter=kind='mines'" -H "Authorization: $T3" | jq '.items|length')
+[ "$n" = "0" ] || fail "личное приглашение видно постороннему"
+curl -s -X PATCH $B/api/collections/games/records/$RID -H "Authorization: $T2" -H "$J" -d '{}' | jq -e '.status=="playing"' >/dev/null || fail "принять гонку"
+H1=$(curl -s -X PATCH $B/api/collections/games/records/$RID -H "Authorization: $T1" -H "$J" -d '{"host_state":{"won":50000,"open":71},"guest_state":{"lost":true}}')
+[ "$(echo "$H1" | jq -r .status)" = "playing" ] || fail "гонка закончилась раньше времени: $H1"
+[ "$(echo "$H1" | jq -r .guest_state)" = "null" ] || fail "хозяин записал за гостя: $H1"
+G1=$(curl -s -X PATCH $B/api/collections/games/records/$RID -H "Authorization: $T2" -H "$J" -d '{"guest_state":{"won":40000,"open":71},"host_state":{"lost":true}}' | tee /dev/stderr)
+[ "$(echo "$G1" | jq -r .status)" = "done" ] && [ "$(echo "$G1" | jq -r .winner)" = "$U2" ] || fail "победитель гонки: $G1"
+[ "$(echo "$G1" | jq -r .host_state.won)" = "50000" ] || fail "гость записал за хозяина"
+code=$(curl -s -o /dev/null -w '%{http_code}' -X DELETE $B/api/collections/games/records/$RID -H "Authorization: $T1")
+[ "$code" = "204" ] || fail "удалить законченную гонку ($code)"
+ok "гонка в сапёр: личное приглашение, свой прогресс, победитель на сервере"
+
 # Звонки
 for i in $(seq 1 20); do curl -sf $B/api/wc/info | jq -e .calls >/dev/null && break; sleep 1; done
 curl -sf $B/api/wc/info | jq -e .calls >/dev/null || fail "LiveKit не запустился"

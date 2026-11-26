@@ -45,6 +45,7 @@ func registerRoutes(app core.App) {
 				"id":        serverID(),
 				"port":      HTTPPort,
 				"addresses": vpnAddresses(),
+				"games":     gamesInfo(),
 			})
 		})
 
@@ -239,6 +240,7 @@ func panelData(app core.App) map[string]any {
 		"publicIP":      publicIP,
 		"invite":        cfg.InviteCode,
 		"arc":           arcInfo(),
+		"games":         gamesInfo(),
 		"adminEmail":    cfg.AdminEmail,
 		"adminPassword": cfg.AdminPassword,
 		"calls":         running,
