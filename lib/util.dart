@@ -58,4 +58,5 @@ String humanSize(int bytes) {
   return '${(bytes / 1024 / 1024 / 1024).toStringAsFixed(2)} ГБ';
 }
 
-final urlRegex = RegExp(r'(https?://[^\s<>"]+)', caseSensitive: false);
+/// Ссылки в сообщениях: обычные и приглашения Winter VPN (wintervpn://join?key=...).
+final urlRegex = RegExp(r'((?:https?|wintervpn)://[^\s<>"]+)', caseSensitive: false);
