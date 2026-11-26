@@ -1,23 +1,36 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:media_kit/media_kit.dart';
 
 import 'api.dart';
 import 'bg_notify.dart';
+import 'links.dart';
 import 'screens/home_screen.dart';
 import 'screens/login_screen.dart';
 import 'settings.dart';
 import 'theme.dart';
+import 'vpn.dart';
 import 'package:winter_core/winter_core.dart';
 
 const buildNumber = String.fromEnvironment('BUILD', defaultValue: 'dev');
 
-Future<void> main() => runWinterApp(repo: 'winter-chat', appName: 'Winter Chat', body: _main);
+List<String> _args = const [];
+
+Future<void> main([List<String> args = const []]) {
+  _args = args;
+  return runWinterApp(repo: 'winter-chat', appName: 'Winter Chat', body: _main);
+}
 
 Future<void> _main() async {
   WidgetsFlutterBinding.ensureInitialized();
   MediaKit.ensureInitialized();
   await Settings.I.init();
   await Api.I.init();
+  // Ссылка-приглашение winterchat://join (её открывает Winter VPN после входа в сеть).
+  await ChatLinks.init(_args);
+  // На ПК Winter VPN включается сам, если сервер чата — в Winter VPN.
+  unawaited(Vpn.ensureOnForServer(Api.I.serverUrl));
   runApp(WinterCrashBanner(child: const WinterChatApp()));
   BgNotify.start();
 }
@@ -63,6 +76,7 @@ class _RootState extends State<Root> with WidgetsBindingObserver {
   void initState() {
     super.initState();
     Api.I.addListener(_changed);
+    ChatLinks.pending.addListener(_onInvite);
     WidgetsBinding.instance.addObserver(this);
     BgNotify.setBackground(false);
     _boot();
@@ -72,6 +86,7 @@ class _RootState extends State<Root> with WidgetsBindingObserver {
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     Api.I.removeListener(_changed);
+    ChatLinks.pending.removeListener(_onInvite);
     super.dispose();
   }
 
@@ -86,6 +101,39 @@ class _RootState extends State<Root> with WidgetsBindingObserver {
     if (mounted) setState(() {});
   }
 
+  /// Пришло приглашение, а мы уже в аккаунте: тот же сервер — просто сказать; другой — предложить перейти.
+  Future<void> _onInvite() async {
+    final link = ChatLinks.pending.value;
+    if (link == null || !Api.I.loggedIn || _booting) return;
+    final target = Api.normalizeUrl(link.server);
+    final host = Uri.tryParse(target)?.host ?? '';
+    final same = Api.I.knownUrls.any((u) => Uri.tryParse(u)?.host == host);
+    final ctx = navigatorKey.currentContext;
+    if (same) {
+      ChatLinks.pending.value = null;
+      if (Api.I.serverUrl != target && await Api.I.isSameServer(target)) await Api.I.switchTo(target);
+      if (ctx != null && ctx.mounted) toast(ctx, 'Ты уже в этом чате ❄');
+      return;
+    }
+    if (ctx == null || !ctx.mounted) return;
+    final go = await showDialog<bool>(
+      context: ctx,
+      builder: (c) => AlertDialog(
+        title: const Text('Приглашение в другой чат'),
+        content: Text('Тебя пригласили на сервер ${link.server}. Выйти из текущего аккаунта и войти там?'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('Остаться')),
+          FilledButton(onPressed: () => Navigator.pop(c, true), child: const Text('Перейти')),
+        ],
+      ),
+    );
+    if (go == true) {
+      await Api.I.logout(); // экран входа подхватит приглашение
+    } else {
+      ChatLinks.pending.value = null;
+    }
+  }
+
   Future<void> _boot() async {
     if (Api.I.loggedIn) {
       try {
@@ -93,6 +141,7 @@ class _RootState extends State<Root> with WidgetsBindingObserver {
       } catch (_) {}
     }
     if (mounted) setState(() => _booting = false);
+    unawaited(_onInvite());
   }
 
   @override

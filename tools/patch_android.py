@@ -66,6 +66,27 @@ if "AlarmService" not in t:
         </receiver>
     </application>""", 1)
 
+# Ссылки winterchat://join?server=...&code=... (приглашение: Winter VPN после входа в сеть открывает чат).
+if 'android:scheme="winterchat"' not in t:
+    t = t.replace(
+        "</intent-filter>",
+        "</intent-filter>\n"
+        "            <intent-filter>\n"
+        '                <action android:name="android.intent.action.VIEW"/>\n'
+        '                <category android:name="android.intent.category.DEFAULT"/>\n'
+        '                <category android:name="android.intent.category.BROWSABLE"/>\n'
+        '                <data android:scheme="winterchat"/>\n'
+        "            </intent-filter>",
+        1,
+    )
+# Ссылки обрабатывает само приложение (app_links), а не встроенный роутер Flutter.
+if "flutter_deeplinking_enabled" not in t:
+    t = t.replace(
+        "</application>",
+        '    <meta-data android:name="flutter_deeplinking_enabled" android:value="false"/>\n    </application>',
+        1,
+    )
+
 m.write_text(t, encoding="utf-8")
 
 # Правила, чтобы оптимизатор не вырезал WebRTC.

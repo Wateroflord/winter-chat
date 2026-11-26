@@ -38,6 +38,9 @@ type Config struct {
 	AdminEmail    string `json:"adminEmail"`
 	AdminPassword string `json:"adminPassword"`
 	ArcStart      string `json:"arcStart"` // первый день Winter Arc (ГГГГ-ММ-ДД)
+	// Код сети Winter VPN (многоразовый ключ tskey-auth-…): панель вставляет его
+	// в ссылку-приглашение, чтобы друг одним нажатием вошёл и в VPN, и в чат.
+	VPNKey string `json:"vpnInviteKey,omitempty"`
 }
 
 var (

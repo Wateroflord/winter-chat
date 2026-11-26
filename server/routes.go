@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"os"
 	"os/exec"
+	"regexp"
 	"runtime"
 	"sort"
 	"strings"
@@ -41,7 +42,7 @@ func registerRoutes(app core.App) {
 				"calls":   running,
 				"arc":     arcInfo(),
 				// Чтобы приложение отличало этот сервер от других и знало его
-				// запасные адреса в Winter VPN / Radmin (если основной не отвечает).
+				// запасные адреса в Winter VPN (если основной не отвечает).
 				"id":        serverID(),
 				"port":      HTTPPort,
 				"addresses": vpnAddresses(),
@@ -120,6 +121,25 @@ func registerRoutes(app core.App) {
 			cfg.ArcStart = today()
 			saveConfig()
 			return e.JSON(http.StatusOK, arcInfo())
+		})
+		// Код сети Winter VPN для ссылки-приглашения (пусто — убрать).
+		r.POST("/api/wc/panel/vpnkey", func(e *core.RequestEvent) error {
+			if !isLocalRequest(e.Request) {
+				return e.ForbiddenError("", nil)
+			}
+			var body struct {
+				Key string `json:"key"`
+			}
+			if err := e.BindBody(&body); err != nil {
+				return e.BadRequestError("Не понял запрос", nil)
+			}
+			key := vpnKeyRe.FindString(body.Key)
+			if body.Key != "" && key == "" {
+				return e.BadRequestError("Не вижу код сети — он начинается с tskey-auth-", nil)
+			}
+			cfg.VPNKey = key
+			saveConfig()
+			return e.JSON(http.StatusOK, map[string]any{"ok": true})
 		})
 		r.POST("/api/wc/panel/invite", func(e *core.RequestEvent) error {
 			if !isLocalRequest(e.Request) {
@@ -239,6 +259,8 @@ func panelData(app core.App) map[string]any {
 		"lan":           lanIPs(),
 		"publicIP":      publicIP,
 		"invite":        cfg.InviteCode,
+		"vpnKey":        cfg.VPNKey,
+		"vpnIP":         winterVPNIP(),
 		"arc":           arcInfo(),
 		"games":         gamesInfo(),
 		"adminEmail":    cfg.AdminEmail,
@@ -265,23 +287,33 @@ func serverID() string {
 	return hex.EncodeToString(sum[:6])
 }
 
-// vpnAddresses — адреса этого компьютера в Winter VPN, Radmin и ZeroTier (без домашней сети).
+// vpnAddresses — адреса этого компьютера в Winter VPN (без домашней сети).
 func vpnAddresses() []map[string]string {
 	out := []map[string]string{}
 	for _, a := range lanIPs() {
-		if a["kind"] != "домашняя сеть" && a["kind"] != "сеть" {
+		if strings.HasPrefix(a["kind"], "Winter VPN") {
 			out = append(out, map[string]string{"ip": a["ip"], "kind": a["kind"]})
 		}
 	}
 	return out
 }
 
+// winterVPNIP — адрес этого компьютера в Winter VPN ("" — Winter VPN выключен или не стоит).
+func winterVPNIP() string {
+	for _, a := range vpnAddresses() {
+		return a["ip"]
+	}
+	return ""
+}
+
+var vpnKeyRe = regexp.MustCompile(`tskey-auth-[A-Za-z0-9_-]+`)
+
 func isIPv4(s string) bool {
 	ip := net.ParseIP(s)
 	return ip != nil && ip.To4() != nil
 }
 
-// lanIPs — адреса этого компьютера в домашней сети (и в VPN вроде Tailscale/ZeroTier/Radmin).
+// lanIPs — адреса этого компьютера в домашней сети и в Winter VPN.
 func lanIPs() []map[string]string {
 	var out []map[string]string
 	ifaces, _ := net.Interfaces()
@@ -299,8 +331,8 @@ func lanIPs() []map[string]string {
 			if ip == nil || ip.IsLinkLocalUnicast() {
 				continue
 			}
-			kind := "сеть"
 			lname := strings.ToLower(ifc.Name)
+			var kind string
 			switch {
 			case strings.Contains(lname, "winter"):
 				kind = "Winter VPN"
@@ -309,12 +341,10 @@ func lanIPs() []map[string]string {
 				if strings.Contains(lname, "tailscale") {
 					kind = "Winter VPN (Tailscale)"
 				}
-			case strings.Contains(lname, "zt") || strings.Contains(lname, "zerotier"):
-				kind = "ZeroTier"
-			case ip[0] == 26:
-				kind = "Radmin VPN"
 			case ip.IsPrivate():
 				kind = "домашняя сеть"
+			default:
+				continue // другие VPN и прочие сети не показываем — работаем через Winter VPN
 			}
 			out = append(out, map[string]string{"ip": ip.String(), "iface": ifc.Name, "kind": kind})
 		}
