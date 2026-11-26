@@ -460,8 +460,13 @@ class _NotifySection extends StatelessWidget {
     await Settings.I.setDnd(options[picked].$2);
   }
 
+  // Разделы в списке настроек — const и не перестраиваются вместе с экраном,
+  // поэтому каждый сам слушает настройки (иначе переключатели «не переключаются»).
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) =>
+      ListenableBuilder(listenable: Settings.I, builder: (context, _) => _build(context));
+
+  Widget _build(BuildContext context) {
     final s = Settings.I;
     return _Section(
       icon: Icons.notifications_none,
@@ -515,8 +520,13 @@ class _NotifySection extends StatelessWidget {
 class _AppearanceSection extends StatelessWidget {
   const _AppearanceSection();
 
+  // Разделы в списке настроек — const и не перестраиваются вместе с экраном,
+  // поэтому каждый сам слушает настройки (иначе переключатели «не переключаются»).
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) =>
+      ListenableBuilder(listenable: Settings.I, builder: (context, _) => _build(context));
+
+  Widget _build(BuildContext context) {
     final s = Settings.I;
     final scales = Settings.textScales;
     var idx = scales.indexWhere((v) => (v - s.textScale).abs() < 0.01);
@@ -778,8 +788,13 @@ class _CallsSectionState extends State<_CallsSection> {
     );
   }
 
+  // Разделы в списке настроек — const и не перестраиваются вместе с экраном,
+  // поэтому каждый сам слушает настройки (иначе переключатели «не переключаются»).
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) =>
+      ListenableBuilder(listenable: Settings.I, builder: (context, _) => _build(context));
+
+  Widget _build(BuildContext context) {
     final s = Settings.I;
     return _Section(
       icon: Icons.call_outlined,
