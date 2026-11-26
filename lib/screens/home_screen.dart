@@ -213,7 +213,7 @@ class _ChatList extends StatelessWidget {
               const SizedBox(height: 14),
               OutlinedButton(onPressed: () => store.refresh(), child: const Text('Повторить')),
               const SizedBox(height: 18),
-              const VpnHint(),
+              VpnHint(onEnabled: () => store.refresh()),
             ],
           ),
         ),

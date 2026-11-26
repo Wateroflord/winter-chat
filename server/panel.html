@@ -33,6 +33,13 @@
   ol { margin: 6px 0 0; padding-left: 20px; } li { margin: 4px 0; }
   a { color: var(--ice); }
   .dot { display:inline-block; width:10px; height:10px; border-radius:50%; margin-right:6px; }
+  .invite { border-color: rgba(127,216,255,.45); background: linear-gradient(135deg, #12304a 0%, var(--s1) 60%); }
+  .msg { white-space: pre-wrap; background: var(--s2); border:1px solid var(--b); border-radius: 12px; padding: 12px; font-size: 13px; margin: 10px 0; word-break: break-all; }
+  input[type=text] { width: 100%; background: var(--s2); color: var(--t); border:1px solid var(--b); border-radius: 10px; padding: 9px 12px; font: inherit; font-family: Consolas, monospace; margin: 8px 0; }
+  input[type=text]:focus { outline: none; border-color: var(--ice); }
+  button.main { background: var(--ice); color: var(--bg); border-color: var(--ice); font-weight: 700; padding: 8px 16px; }
+  .note { padding: 10px 12px; border-radius: 12px; margin: 8px 0; }
+  .note.warn { background: rgba(255,196,107,.1); border:1px solid rgba(255,196,107,.4); color: var(--warn); }
 </style>
 </head>
 <body>
@@ -41,6 +48,11 @@
   <div class="sub" id="sub">Загрузка…</div>
 
   <div class="grid">
+    <div class="card full invite">
+      <h2>Пригласить друга — одна ссылка на всё</h2>
+      <div id="inv"></div>
+    </div>
+
     <div class="card">
       <h2>Состояние</h2>
       <div class="row"><span>Чаты и файлы</span><b class="ok"><span class="dot" style="background:var(--good)"></span>работают</b></div>
@@ -52,9 +64,9 @@
     </div>
 
     <div class="card">
-      <h2>Код приглашения</h2>
+      <h2>Код регистрации</h2>
       <div class="big" id="invite">…</div>
-      <div class="muted" style="margin:8px 0 12px">Друзья вводят его при регистрации. Без кода зарегистрироваться нельзя.</div>
+      <div class="muted" style="margin:8px 0 12px">Без него зарегистрироваться нельзя. В ссылку-приглашение он уже вписан.</div>
       <button onclick="copy(state.invite)">Скопировать</button>
       <button onclick="newInvite()">Новый код</button>
     </div>
@@ -73,16 +85,16 @@
     </div>
 
     <div class="card full">
-      <h2>Как подключить друзей через интернет</h2>
+      <h2>Как это работает</h2>
       <ol>
-        <li>Зайди в настройки роутера и открой (пробрось) порты на этот компьютер (<span class="mono" id="lanMain">—</span>):
-          <table style="margin:8px 0"><thead><tr><th>Порт</th><th>Протокол</th><th>Для чего</th></tr></thead><tbody id="ports"></tbody></table>
-        </li>
-        <li>Брандмауэр Windows установщик настраивает сам. Если сервер запущен не из установщика и Windows спросит про Winter Chat Server и livekit-server — нажми «Разрешить».</li>
-        <li>Дай друзьям адрес <b class="mono" id="pubAddr">—</b> и код приглашения.</li>
-        <li><b>Проще всего — Winter VPN</b> (есть в Winter Hub): поставь его на этот компьютер и друзьям, создай сеть и дай друзьям код приглашения сети. Порты на роутере тогда открывать не нужно. Адрес сервера в Winter VPN (100.x.x.x) появится в списке выше — его друзья и вводят в Winter Chat. Приложение само переключается на него, если обычный адрес не отвечает.</li>
-        <li>Radmin VPN и ZeroTier тоже подходят — их адреса тоже появятся выше.</li>
+        <li>Winter VPN на этом компьютере и у друзей объединяет вас в одну сеть — без «белого» IP и проброса портов. Служба Winter VPN включается вместе с Windows, окно Winter VPN держать открытым не нужно.</li>
+        <li>Друг получает одну ссылку (кнопка выше): Winter VPN входит в сеть и сам открывает Winter Chat, где уже вписаны адрес сервера и код регистрации.</li>
+        <li>Брандмауэр Windows установщик сервера настраивает сам.</li>
       </ol>
+      <details style="margin-top:8px"><summary class="muted">Без Winter VPN (для продвинутых): открыть порты на роутере</summary>
+        <div class="muted" style="margin-top:6px">Пробрось на этот компьютер (<span class="mono" id="lanMain">—</span>) порты ниже и дай друзьям адрес <b class="mono" id="pubAddr">—</b>.</div>
+        <table style="margin:8px 0"><thead><tr><th>Порт</th><th>Протокол</th><th>Для чего</th></tr></thead><tbody id="ports"></tbody></table>
+      </details>
     </div>
 
     <div class="card full">
@@ -119,6 +131,7 @@ async function load() {
   $('nUsers').textContent = (s.users || []).length;
   $('nChats').textContent = s.chats + ' / ' + s.messages;
   $('invite').textContent = s.invite;
+  renderInvite(s);
   const d = x => (x || '').split('-').reverse().join('.');
   $('arcDates').textContent = s.arc ? d(s.arc.start) + ' — ' + d(s.arc.end) : '—';
   const lan = s.lan || [];
@@ -131,6 +144,54 @@ async function load() {
   $('users').innerHTML = (s.users || []).map(u => `<tr><td class="mono">${esc(u.username)}</td><td>${esc(u.name)}</td><td class="muted">${esc((u.created||'').slice(0,16))}</td><td><button onclick="resetPass('${esc(u.id)}','${esc(u.username)}')">Сменить пароль</button></td></tr>`).join('');
   $('noUsers').textContent = (s.users || []).length ? '' : 'Пока никто не зарегистрировался.';
   $('aEmail').textContent = s.adminEmail; $('aPass').textContent = s.adminPassword; $('dataDir').textContent = s.dataDir;
+}
+const KEYS_PAGE = 'https://login.tailscale.com/admin/settings/keys';
+const HUB_PAGE = 'https://github.com/Wateroflord/winter-hub/releases/latest';
+let editingKey = false;
+function inviteLink(s) {
+  const q = (v) => encodeURIComponent(v);
+  return `wintervpn://join?key=${q(s.vpnKey)}&chat=${q(s.vpnIP + ':' + s.port)}&code=${q(s.invite)}`;
+}
+function inviteMessage(s) {
+  return 'Заходи в наш Winter Chat ❄\n\n' +
+    '1. Поставь Winter Hub, а из него — Winter VPN и Winter Chat:\n' + HUB_PAGE + '\n\n' +
+    '2. Телефон: нажми на ссылку — Winter VPN войдёт в сеть и сам откроет чат:\n' + inviteLink(s) + '\n' +
+    'ПК: открой Winter VPN → «Войти по приглашению» → вставь это сообщение целиком.\n\n' +
+    '3. В чате придумай логин и пароль — адрес и код уже вписаны.';
+}
+function renderInvite(s) {
+  const box = $('inv');
+  const inp = $('vpnKeyIn');
+  if (inp && (document.activeElement === inp || inp.value)) return; // не мешать вводу кода
+  if (!s.vpnIP) {
+    box.innerHTML = `<div class="note warn">Winter VPN на этом компьютере выключен или не установлен.</div>
+      <ol><li>Поставь <b>Winter VPN</b> через Winter Hub.</li><li>Открой его и нажми «Создать сеть» (вход через Google).</li><li>Ссылка-приглашение появится здесь.</li></ol>`;
+    return;
+  }
+  if (!s.vpnKey || editingKey) {
+    box.innerHTML = `<div>Этот компьютер в Winter VPN: <b class="mono">${esc(s.vpnIP)}:${s.port}</b> <span class="ok">●</span></div>
+      <div style="margin-top:10px">Один раз вставь <b>код сети</b> — им друзья входят в твою сеть Winter VPN:</div>
+      <ol><li><a href="${KEYS_PAGE}" target="_blank">Открой страницу ключей</a> (тот же аккаунт, что в Winter VPN).</li>
+        <li>«Generate auth key…» → включи <b>Reusable</b> (многоразовый), срок <b>90 дней</b> → «Generate key».</li>
+        <li>Скопируй код (tskey-auth-…) и вставь сюда:</li></ol>
+      <input type="text" id="vpnKeyIn" placeholder="tskey-auth-…" autocomplete="off">
+      <button class="main" onclick="saveVpnKey()">Сохранить</button>
+      ${s.vpnKey ? '<button onclick="editingKey=false;load()">Отмена</button>' : ''}
+      <div class="muted" style="margin-top:8px">Код — как пароль от сети: он хранится только на этом компьютере и попадает только в приглашения.</div>`;
+    return;
+  }
+  box.innerHTML = `<div class="muted">Отправь другу это сообщение (например, в Telegram или Discord) — с телефона ссылка открывается одним нажатием:</div>
+    <div class="msg">${esc(inviteMessage(s))}</div>
+    <button class="main" onclick="copy(inviteMessage(state))">Скопировать приглашение</button>
+    <button onclick="copy(inviteLink(state))">Только ссылку</button>
+    <button onclick="editingKey=true;load()">Сменить код сети</button>
+    <div class="muted" style="margin-top:8px">Код сети действует 90 дней — потом создай новый и нажми «Сменить код сети». Кто уже вошёл, останется в сети.</div>`;
+}
+async function saveVpnKey() {
+  const key = ($('vpnKeyIn').value || '').trim();
+  const r = await fetch('/api/wc/panel/vpnkey', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({key})});
+  if (!r.ok) { const j = await r.json().catch(() => ({})); alert(j.message || 'Не получилось сохранить'); return; }
+  editingKey = false; $('vpnKeyIn').value = ''; $('vpnKeyIn').blur(); load();
 }
 async function newInvite() {
   if (!confirm('Сделать новый код? Старый перестанет работать (уже зарегистрированных это не касается).')) return;

@@ -1,81 +1,111 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:url_launcher/url_launcher.dart';
 
-/// Адрес этого устройства в VPN-сети.
+/// Адрес этого устройства в Winter VPN.
 class VpnAddr {
-  const VpnAddr(this.ip, this.kind, this.iface);
+  const VpnAddr(this.ip, this.iface);
   final String ip;
-  final String kind; // 'Winter VPN', 'Radmin VPN', 'ZeroTier'
   final String iface;
 }
 
-/// Winter VPN и другие VPN для игр (Radmin, ZeroTier): определить, включены ли они,
-/// и открыть приложение Winter VPN.
+/// Winter VPN: включён ли он, включить его, открыть приложение.
 class Vpn {
   static const releasesUrl = 'https://github.com/Wateroflord/winter-vpn/releases/latest';
 
-  /// Winter VPN (движок Tailscale) выдаёт адреса 100.64.0.0 – 100.127.255.255.
+  /// Winter VPN выдаёт адреса 100.64.0.0 – 100.127.255.255.
   static bool isWinter(String ip) {
-    final p = _parts(ip);
-    return p != null && p[0] == 100 && p[1] >= 64 && p[1] <= 127;
-  }
-
-  static bool isRadmin(String ip) {
-    final p = _parts(ip);
-    return p != null && p[0] == 26;
-  }
-
-  static List<int>? _parts(String ip) {
     final s = ip.split('.');
-    if (s.length != 4) return null;
-    final out = <int>[];
-    for (final x in s) {
-      final v = int.tryParse(x);
-      if (v == null || v < 0 || v > 255) return null;
-      out.add(v);
-    }
-    return out;
+    if (s.length != 4) return false;
+    final a = int.tryParse(s[0]);
+    final b = int.tryParse(s[1]);
+    return a == 100 && b != null && b >= 64 && b <= 127;
   }
 
-  /// Какой VPN нужен, чтобы попасть на этот адрес ('' — обычный адрес).
-  static String kindOfHost(String host) {
-    if (isWinter(host)) return 'Winter VPN';
-    if (isRadmin(host)) return 'Radmin VPN';
-    return '';
-  }
+  /// Адрес сервера вида http://100.1.2.3:8090 — в Winter VPN.
+  static bool isWinterUrl(String url) => isWinter(Uri.tryParse(url)?.host ?? '');
 
-  /// Какой VPN нужен для адреса сервера вида http://100.1.2.3:8090.
-  static String kindOfUrl(String url) => kindOfHost(Uri.tryParse(url)?.host ?? '');
+  static bool get _windows => !kIsWeb && Platform.isWindows;
+  static bool get _android => !kIsWeb && Platform.isAndroid;
 
-  /// VPN-адреса этого устройства. Пусто — VPN выключен.
+  /// Адреса этого устройства в Winter VPN. Пусто — VPN выключен.
   static Future<List<VpnAddr>> local() async {
     if (kIsWeb) return const [];
     try {
       final list = await NetworkInterface.list(type: InternetAddressType.IPv4, includeLinkLocal: false);
-      final out = <VpnAddr>[];
-      for (final ifc in list) {
-        final name = ifc.name.toLowerCase();
-        for (final a in ifc.addresses) {
-          final ip = a.address;
-          if (isWinter(ip) || name.contains('winter') || name.contains('tailscale')) {
-            out.add(VpnAddr(ip, 'Winter VPN', ifc.name));
-          } else if (isRadmin(ip) || name.contains('radmin')) {
-            out.add(VpnAddr(ip, 'Radmin VPN', ifc.name));
-          } else if (name.startsWith('zt') || name.contains('zerotier')) {
-            out.add(VpnAddr(ip, 'ZeroTier', ifc.name));
-          }
-        }
-      }
-      return out;
+      return [
+        for (final ifc in list)
+          for (final a in ifc.addresses)
+            if (isWinter(a.address)) VpnAddr(a.address, ifc.name),
+      ];
     } catch (_) {
       return const [];
     }
   }
 
-  /// Включён ли VPN нужного вида на этом устройстве.
-  static Future<bool> hasLocal(String kind) async => (await local()).any((a) => a.kind == kind);
+  static Future<bool> isOn() async => (await local()).isNotEmpty;
+
+  /// Движок Winter VPN на этом ПК (Windows).
+  static String? get _cli {
+    if (!_windows) return null;
+    for (final v in ['ProgramW6432', 'ProgramFiles']) {
+      final pf = Platform.environment[v];
+      if (pf == null) continue;
+      final p = '$pf\\Winter VPN\\winter-vpn-cli.exe';
+      if (File(p).existsSync()) return p;
+    }
+    return null;
+  }
+
+  /// Стоит ли Winter VPN на этом ПК (на телефоне не узнать — считаем, что да).
+  static bool get installedOnPc => _cli != null;
+
+  /// Включить Winter VPN.
+  /// ПК: тихо, без окон (если он выключен, а в сеть уже входили).
+  /// Телефон: короткая ссылка wintervpn://connect — Winter VPN включится и не откроется.
+  /// Возвращает false, если включить не получилось (нет приложения или ещё не входили в сеть).
+  static Future<bool> connect() async {
+    final cli = _cli;
+    if (cli != null) {
+      try {
+        final st = await Process.run(cli, ['status', '--json'], stdoutEncoding: utf8)
+            .timeout(const Duration(seconds: 8));
+        final out = '${st.stdout}'.trim();
+        if (!out.startsWith('{')) return false;
+        final j = jsonDecode(out) as Map<String, dynamic>;
+        final state = '${j['BackendState']}';
+        if (state == 'Running') return true;
+        if (state != 'Stopped') return false; // нужно войти в сеть — это делает приложение Winter VPN
+        final name = '${(j['Self'] as Map?)?['HostName'] ?? ''}';
+        final r = await Process.run(cli, [
+          'up',
+          '--reset',
+          '--unattended',
+          if (name.isNotEmpty) '--hostname=$name',
+          '--timeout=20s',
+        ]).timeout(const Duration(seconds: 30));
+        return r.exitCode == 0;
+      } catch (_) {
+        return false;
+      }
+    }
+    if (_android) {
+      try {
+        return await launchUrl(Uri.parse('wintervpn://connect'), mode: LaunchMode.externalApplication);
+      } catch (_) {
+        return false;
+      }
+    }
+    return false;
+  }
+
+  /// При запуске чата на ПК: сервер в Winter VPN, а VPN выключен — включить сам.
+  static Future<void> ensureOnForServer(String serverUrl) async {
+    if (!_windows || !isWinterUrl(serverUrl) || await isOn()) return;
+    await connect();
+  }
 
   /// Открыть приложение Winter VPN. Если его нет — страницу загрузки.
   /// Возвращает false, если пришлось открыть страницу загрузки.

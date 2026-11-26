@@ -40,6 +40,13 @@ Name: "{group}\Winter Chat"; Filename: "{app}\winter_chat.exe"
 Name: "{group}\{cm:UninstallProgram,Winter Chat}"; Filename: "{uninstallexe}"
 Name: "{userdesktop}\Winter Chat"; Filename: "{app}\winter_chat.exe"; Tasks: desktopicon
 
+[Registry]
+; Ссылки winterchat://join?server=...&code=... (приглашение; их открывает Winter VPN после входа в сеть).
+Root: HKCU; Subkey: "Software\Classes\winterchat"; ValueType: string; ValueName: ""; ValueData: "URL:Winter Chat"; Flags: uninsdeletekey
+Root: HKCU; Subkey: "Software\Classes\winterchat"; ValueType: string; ValueName: "URL Protocol"; ValueData: ""
+Root: HKCU; Subkey: "Software\Classes\winterchat\DefaultIcon"; ValueType: string; ValueName: ""; ValueData: """{app}\winter_chat.exe"",0"
+Root: HKCU; Subkey: "Software\Classes\winterchat\shell\open\command"; ValueType: string; ValueName: ""; ValueData: """{app}\winter_chat.exe"" ""%1"""
+
 [Run]
 Filename: "{app}\winter_chat.exe"; Description: "{cm:LaunchProgram,Winter Chat}"; Flags: nowait postinstall skipifsilent
 Filename: "{app}\winter_chat.exe"; Flags: nowait; Check: WizardSilent

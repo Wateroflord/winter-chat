@@ -937,61 +937,81 @@ class _NetworkSectionState extends State<_NetworkSection> {
     if (!mounted) return;
     setState(() => _checking = null);
     if (!ok) {
-      final kind = Vpn.kindOfUrl(url);
-      toast(context, kind.isEmpty ? 'Этот адрес сейчас не отвечает' : 'Не отвечает. Включи $kind на этом устройстве и на сервере.');
+      toast(
+        context,
+        Vpn.isWinterUrl(url)
+            ? 'Не отвечает. Включи Winter VPN на этом устройстве и проверь, что он включён на компьютере-сервере.'
+            : 'Этот адрес сейчас не отвечает',
+      );
       return;
     }
     await Api.I.switchTo(url);
     if (mounted) toast(context, 'Подключено: ${url.replaceFirst('http://', '')}');
   }
 
+  bool _enabling = false;
+
+  Future<void> _enable() async {
+    setState(() => _enabling = true);
+    final ok = await Vpn.connect();
+    if (!ok) {
+      final opened = await Vpn.open();
+      if (!opened && mounted) toast(context, 'Winter VPN не установлен — поставь его через Winter Hub');
+    }
+    // VPN поднимается пару секунд.
+    for (var i = 0; i < 8 && mounted; i++) {
+      await Future<void>.delayed(const Duration(seconds: 1));
+      await _scan();
+      if (_local?.isNotEmpty ?? false) break;
+    }
+    if (mounted) setState(() => _enabling = false);
+  }
+
   @override
   Widget build(BuildContext context) {
     final api = Api.I;
     final local = _local;
-    final winter = local?.where((a) => a.kind == 'Winter VPN').toList() ?? const <VpnAddr>[];
-    final others = local?.where((a) => a.kind != 'Winter VPN').toList() ?? const <VpnAddr>[];
+    final on = local?.isNotEmpty ?? false;
     final urls = api.knownUrls;
     return _Section(
       icon: Icons.hub_outlined,
       title: 'СЕТЬ И WINTER VPN',
       children: [
         ListTile(
-          leading: Icon(
-            winter.isNotEmpty ? Icons.shield : Icons.shield_outlined,
-            color: winter.isNotEmpty ? W.good : W.muted,
-          ),
-          title: Text(winter.isNotEmpty ? 'Winter VPN включён' : 'Winter VPN выключен', style: W.body),
+          leading: Icon(on ? Icons.shield : Icons.shield_outlined, color: on ? W.good : W.muted),
+          title: Text(on ? 'Winter VPN включён' : 'Winter VPN выключен', style: W.body),
           subtitle: Text(
             local == null
                 ? 'Проверяю…'
-                : winter.isNotEmpty
-                    ? 'Твой адрес в сети: ${winter.first.ip}'
-                    : 'Нужен, если сервер и ты в разных сетях (друг далеко, нет «белого» IP)',
+                : on
+                    ? 'Твой адрес в сети: ${local.first.ip}'
+                    : 'Нужен, чтобы попасть на сервер друзей',
             style: W.small,
           ),
           trailing: IconButton(tooltip: 'Обновить', icon: const Icon(Icons.refresh, color: W.muted), onPressed: _scan),
         ),
-        if (others.isNotEmpty)
-          ListTile(
-            leading: const Icon(Icons.lan_outlined, color: W.muted),
-            title: Text(others.map((a) => a.kind).toSet().join(', '), style: W.body),
-            subtitle: Text(others.map((a) => a.ip).join(', '), style: W.small),
-          ),
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
           child: Wrap(
             spacing: 10,
             runSpacing: 8,
             children: [
-              FilledButton.icon(
+              if (!on && local != null)
+                FilledButton.icon(
+                  onPressed: _enabling ? null : _enable,
+                  icon: _enabling
+                      ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: W.bg))
+                      : const Icon(Icons.power_settings_new, size: 18),
+                  label: const Text('Включить Winter VPN'),
+                ),
+              OutlinedButton.icon(
                 onPressed: () async {
                   final opened = await Vpn.open();
                   if (!opened && context.mounted) {
                     toast(context, 'Winter VPN не установлен — открыл страницу загрузки (или поставь его через Winter Hub)');
                   }
                 },
-                icon: const Icon(Icons.shield_outlined, size: 18),
+                icon: const Icon(Icons.open_in_new, size: 18),
                 label: const Text('Открыть Winter VPN'),
               ),
             ],
@@ -1007,7 +1027,7 @@ class _NetworkSectionState extends State<_NetworkSection> {
             subtitle: Text(
               [
                 if (u == api.primaryUrl) 'основной адрес',
-                if (Vpn.kindOfUrl(u).isNotEmpty) 'через ${Vpn.kindOfUrl(u)}',
+                if (Vpn.isWinterUrl(u)) 'через Winter VPN',
                 if (u == api.serverUrl) 'сейчас используется',
               ].join(' · '),
               style: W.small,
@@ -1028,8 +1048,8 @@ class _NetworkSectionState extends State<_NetworkSection> {
         const Padding(
           padding: EdgeInsets.fromLTRB(16, 4, 16, 14),
           child: Text(
-            'Если основной адрес не отвечает, приложение само переключится на адрес сервера в Winter VPN. '
-            'Адреса в Winter VPN сервер сообщает сам — для этого Winter VPN должен быть включён и на компьютере-сервере.',
+            'Если адрес не отвечает, приложение само попробует другие адреса этого сервера. '
+            'На ПК Winter VPN включается сам при запуске чата.',
             style: W.small,
           ),
         ),
@@ -1040,38 +1060,61 @@ class _NetworkSectionState extends State<_NetworkSection> {
 
 /// Подсказка про Winter VPN — на экране входа и когда нет связи с сервером.
 class VpnHint extends StatefulWidget {
-  const VpnHint({super.key, this.serverText});
+  const VpnHint({super.key, this.serverText, this.onEnabled});
 
   /// Адрес, который ввели на экране входа (чтобы понять, нужен ли VPN).
   final String? serverText;
+
+  /// VPN включили — можно пробовать подключиться снова.
+  final VoidCallback? onEnabled;
 
   @override
   State<VpnHint> createState() => _VpnHintState();
 }
 
 class _VpnHintState extends State<VpnHint> {
-  List<VpnAddr>? _local;
+  bool? _on;
+  bool _enabling = false;
 
   @override
   void initState() {
     super.initState();
-    Vpn.local().then((l) {
-      if (mounted) setState(() => _local = l);
-    });
+    _scan();
+  }
+
+  Future<void> _scan() async {
+    final on = await Vpn.isOn();
+    if (mounted) setState(() => _on = on);
+  }
+
+  Future<void> _enable() async {
+    setState(() => _enabling = true);
+    final ok = await Vpn.connect();
+    if (!ok) {
+      final opened = await Vpn.open();
+      if (!opened && mounted) toast(context, 'Winter VPN не установлен — поставь его через Winter Hub');
+    }
+    for (var i = 0; i < 8 && mounted; i++) {
+      await Future<void>.delayed(const Duration(seconds: 1));
+      await _scan();
+      if (_on == true) break;
+    }
+    if (!mounted) return;
+    setState(() => _enabling = false);
+    if (_on == true) widget.onEnabled?.call();
   }
 
   @override
   Widget build(BuildContext context) {
-    final on = _local?.any((a) => a.kind == 'Winter VPN') ?? false;
+    final on = _on ?? false;
     final typed = widget.serverText ?? Api.I.serverUrl;
-    final needs = Vpn.kindOfHost(Uri.tryParse(Api.normalizeUrl(typed))?.host ?? '');
-    final text = switch ((needs, on)) {
-      ('Winter VPN', false) => 'Этот адрес — в Winter VPN. Включи Winter VPN на этом устройстве, и всё заработает.',
-      ('Winter VPN', true) => 'Winter VPN включён. Если не подключается — проверь, что Winter VPN включён и на компьютере-сервере.',
-      ('Radmin VPN', _) => 'Это адрес Radmin VPN — проверь, что Radmin включён и вы в одной сети.',
-      _ => 'Друг далеко или нет «белого» IP? Поставьте Winter VPN на телефон/ПК и на компьютер-сервер, '
-          'а в адрес впиши адрес сервера в Winter VPN (100.x.x.x — он есть в панели сервера).',
-    };
+    final vpnAddr = Vpn.isWinterUrl(Api.normalizeUrl(typed));
+    final text = vpnAddr
+        ? (on
+            ? 'Winter VPN включён. Если всё равно не подключается — проверь, что Winter VPN включён и на компьютере-сервере.'
+            : 'Сервер — в Winter VPN. Включи Winter VPN, и всё заработает.')
+        : 'Сервер друзей доступен через Winter VPN: попроси у владельца ссылку-приглашение — '
+            'она сама включит VPN и заполнит адрес (100.x.x.x:8090).';
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
@@ -1086,22 +1129,33 @@ class _VpnHintState extends State<VpnHint> {
             children: [
               Icon(on ? Icons.shield : Icons.shield_outlined, size: 18, color: on ? W.good : W.ice),
               const SizedBox(width: 8),
-              Text(on ? 'Winter VPN включён' : 'Winter VPN', style: const TextStyle(fontWeight: FontWeight.w700, color: W.text)),
+              Text(on ? 'Winter VPN включён' : 'Winter VPN выключен', style: const TextStyle(fontWeight: FontWeight.w700, color: W.text)),
             ],
           ),
           const SizedBox(height: 6),
           Text(text, style: W.small),
           const SizedBox(height: 8),
-          Align(
-            alignment: Alignment.centerLeft,
-            child: OutlinedButton.icon(
-              onPressed: () async {
-                final opened = await Vpn.open();
-                if (!opened && context.mounted) toast(context, 'Открыл страницу загрузки Winter VPN');
-              },
-              icon: const Icon(Icons.open_in_new, size: 16),
-              label: Text(on ? 'Открыть Winter VPN' : 'Включить Winter VPN'),
-            ),
+          Wrap(
+            spacing: 8,
+            runSpacing: 6,
+            children: [
+              if (!on)
+                FilledButton.icon(
+                  onPressed: _enabling ? null : _enable,
+                  icon: _enabling
+                      ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: W.bg))
+                      : const Icon(Icons.power_settings_new, size: 16),
+                  label: const Text('Включить Winter VPN'),
+                ),
+              OutlinedButton.icon(
+                onPressed: () async {
+                  final opened = await Vpn.open();
+                  if (!opened && context.mounted) toast(context, 'Открыл страницу загрузки Winter VPN');
+                },
+                icon: const Icon(Icons.open_in_new, size: 16),
+                label: const Text('Открыть Winter VPN'),
+              ),
+            ],
           ),
         ],
       ),

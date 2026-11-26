@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../api.dart';
+import '../links.dart';
 import '../theme.dart';
 import 'settings_screen.dart' show VpnHint;
 
@@ -29,8 +30,40 @@ class _LoginScreenState extends State<LoginScreen> {
     return s.replaceFirst('http://', '');
   }
 
+  /// Открыли ссылкой-приглашением: адрес и код уже вписаны.
+  bool _fromInvite = false;
+
+  @override
+  void initState() {
+    super.initState();
+    ChatLinks.pending.addListener(_applyInvite);
+    _applyInvite();
+  }
+
+  void _applyInvite() {
+    final link = ChatLinks.pending.value;
+    if (link == null) return;
+    ChatLinks.pending.value = null;
+    void apply() {
+      _server.text = link.server;
+      if (link.code.isNotEmpty) {
+        _invite.text = link.code;
+        _register = true;
+      }
+      _fromInvite = true;
+      _error = null;
+    }
+
+    if (mounted) {
+      setState(apply);
+    } else {
+      apply();
+    }
+  }
+
   @override
   void dispose() {
+    ChatLinks.pending.removeListener(_applyInvite);
     for (final c in [_server, _username, _name, _password, _password2, _invite]) {
       c.dispose();
     }
@@ -113,6 +146,23 @@ class _LoginScreenState extends State<LoginScreen> {
                       const Text('Чаты и звонки для своих', textAlign: TextAlign.center, style: W.small),
                       const SizedBox(height: 24),
                       _tabs(),
+                      if (_fromInvite) ...[
+                        const SizedBox(height: 14),
+                        Container(
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: W.good.withValues(alpha: 0.10),
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: W.good.withValues(alpha: 0.4)),
+                          ),
+                          child: Text(
+                            _register
+                                ? 'Приглашение от друга ❄ Адрес сервера и код уже вписаны — придумай логин и пароль. Уже есть аккаунт? Нажми «Вход».'
+                                : 'Приглашение от друга ❄ Адрес сервера уже вписан — войди своим логином и паролем.',
+                            style: const TextStyle(color: W.good),
+                          ),
+                        ),
+                      ],
                       const SizedBox(height: 18),
                       TextField(
                         controller: _server,
@@ -120,7 +170,7 @@ class _LoginScreenState extends State<LoginScreen> {
                         keyboardType: TextInputType.url,
                         decoration: const InputDecoration(
                           labelText: 'Адрес сервера',
-                          hintText: 'например 192.168.1.10:8090',
+                          hintText: 'например 100.104.115.8:8090',
                           prefixIcon: Icon(Icons.dns_outlined, color: W.muted),
                         ),
                       ),
@@ -181,7 +231,7 @@ class _LoginScreenState extends State<LoginScreen> {
                           onSubmitted: (_) => _submit(),
                           decoration: const InputDecoration(
                             labelText: 'Код приглашения',
-                            hintText: 'например SNOW-1234',
+                            hintText: 'например SNOW-7K3P-9QXA',
                             prefixIcon: Icon(Icons.key_outlined, color: W.muted),
                           ),
                         ),
@@ -199,7 +249,13 @@ class _LoginScreenState extends State<LoginScreen> {
                         ),
                         if (_error!.contains('подключиться') || _error!.contains('не отвечает') || _error!.contains('Нет связи')) ...[
                           const SizedBox(height: 10),
-                          VpnHint(key: ValueKey(_server.text), serverText: _server.text),
+                          VpnHint(
+                            key: ValueKey(_server.text),
+                            serverText: _server.text,
+                            onEnabled: () {
+                              if (!_busy) _submit();
+                            },
+                          ),
                         ],
                       ],
                       const SizedBox(height: 18),
@@ -211,7 +267,7 @@ class _LoginScreenState extends State<LoginScreen> {
                       ),
                       const SizedBox(height: 16),
                       const Text(
-                        'Адрес сервера и код приглашения показывает программа Winter Chat Server на компьютере, где она запущена.',
+                        'Проще всего — ссылка-приглашение от владельца сервера: она включит Winter VPN и сама заполнит адрес и код.',
                         textAlign: TextAlign.center,
                         style: W.small,
                       ),

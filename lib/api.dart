@@ -21,7 +21,7 @@ class Api extends ChangeNotifier {
   /// переключиться на запасной — например, адрес в Winter VPN).
   String primaryUrl = '';
 
-  /// Запасные адреса того же сервера (в Winter VPN, Radmin и т.п.), их сообщает сам сервер.
+  /// Запасные адреса того же сервера (в Winter VPN), их сообщает сам сервер.
   List<String> altUrls = [];
   String serverId = '';
 

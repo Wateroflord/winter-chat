@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:pocketbase/pocketbase.dart';
 
 import 'api.dart';
+import 'vpn.dart';
 
 /// Список чатов и активных звонков, обновляется в реальном времени.
 class Store extends ChangeNotifier {
@@ -85,6 +86,9 @@ class Store extends ChangeNotifier {
       if (!silent || !loaded) error = Api.errorText(e, fallback: 'Нет связи с сервером');
       loaded = true;
       notifyListeners();
+      // Сервер в Winter VPN, а он выключен — на ПК включаем сами.
+      final vpnUrl = Api.I.knownUrls.where(Vpn.isWinterUrl).firstOrNull;
+      if (vpnUrl != null) await Vpn.ensureOnForServer(vpnUrl);
       // Основной адрес не отвечает — пробуем запасные (например, через Winter VPN).
       if (await Api.I.failover()) {
         await start();
