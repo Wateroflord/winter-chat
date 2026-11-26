@@ -12,10 +12,13 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../api.dart';
 import '../call_controller.dart';
+import '../settings.dart';
 import '../store.dart';
 import '../theme.dart';
 import '../util.dart';
 import '../widgets/avatar.dart';
+import '../widgets/chat_background.dart';
+import '../widgets/video_message.dart';
 import 'home_screen.dart';
 import 'people_sheet.dart';
 
@@ -53,6 +56,9 @@ class _ChatScreenState extends State<ChatScreen> {
     super.initState();
     Store.I.addListener(_changed);
     CallController.I.addListener(_changed);
+    Settings.I.addListener(_changed);
+    Api.I.addListener(_serverMaybeChanged);
+    _server = Api.I.serverUrl;
     _scroll.addListener(_onScroll);
     _load();
     _subscribe();
@@ -63,6 +69,8 @@ class _ChatScreenState extends State<ChatScreen> {
   void dispose() {
     Store.I.removeListener(_changed);
     CallController.I.removeListener(_changed);
+    Settings.I.removeListener(_changed);
+    Api.I.removeListener(_serverMaybeChanged);
     _poll?.cancel();
     _unsub?.call();
     _text.dispose();
@@ -75,6 +83,17 @@ class _ChatScreenState extends State<ChatScreen> {
     if (!mounted) return;
     setState(() {});
     _markRead();
+  }
+
+  String _server = '';
+
+  /// Переключились на запасной адрес сервера (Winter VPN) — переподписаться на сообщения.
+  void _serverMaybeChanged() {
+    if (!mounted || Api.I.serverUrl == _server || !Api.I.loggedIn) return;
+    _server = Api.I.serverUrl;
+    _unsub = null;
+    _subscribe();
+    _fetchNewest();
   }
 
   void _markRead() {
@@ -422,7 +441,7 @@ class _ChatScreenState extends State<ChatScreen> {
         children: [
           if (!widget.embedded) const InCallBar(),
           if (inCall.isNotEmpty && !iAmInCall) _callBanner(chat, title, inCall),
-          Expanded(child: _messagesView(isGroup)),
+          Expanded(child: ChatBackground(style: Settings.I.chatBackground, child: _messagesView(isGroup))),
           _composer(),
         ],
       ),
@@ -675,16 +694,18 @@ class MessageBubble extends StatelessWidget {
     final text = message.getStringValue('text');
     final files = message.getListValue<String>('files');
     final images = files.where((f) => fileKind(f) == FileKind.image).toList();
-    final others = files.where((f) => fileKind(f) != FileKind.image).toList();
+    final videos = files.where((f) => fileKind(f) == FileKind.video).toList();
+    final others = files.where((f) => fileKind(f) != FileKind.image && fileKind(f) != FileKind.video).toList();
+    final settings = Settings.I;
     final d = parseDate(message.getStringValue('created'));
     final edited = message.getBoolValue('edited');
     final maxW = (MediaQuery.sizeOf(context).width * 0.72).clamp(200.0, 560.0).toDouble();
 
     final bubble = Container(
       constraints: BoxConstraints(maxWidth: maxW),
-      padding: const EdgeInsets.fromLTRB(10, 7, 10, 6),
+      padding: settings.compact ? const EdgeInsets.fromLTRB(9, 5, 9, 4) : const EdgeInsets.fromLTRB(10, 7, 10, 6),
       decoration: BoxDecoration(
-        color: mine ? W.iceDeep : W.surface2,
+        color: mine ? settings.myBubble : W.surface2,
         borderRadius: BorderRadius.only(
           topLeft: const Radius.circular(16),
           topRight: const Radius.circular(16),
@@ -716,6 +737,7 @@ class MessageBubble extends StatelessWidget {
                 ],
               ),
             ),
+          for (final f in videos) VideoMessage(key: ValueKey('${message.id}/$f'), message: message, file: f, width: maxW - 20),
           for (final f in others) _FileTile(message: message, file: f),
           if (text.isNotEmpty) _LinkText(text),
           Align(
@@ -730,7 +752,7 @@ class MessageBubble extends StatelessWidget {
     );
 
     return Padding(
-      padding: EdgeInsets.only(top: compact ? 2 : 8),
+      padding: EdgeInsets.only(top: compact ? 2 : (settings.compact ? 5 : 8)),
       child: Row(
         mainAxisAlignment: mine ? MainAxisAlignment.end : MainAxisAlignment.start,
         crossAxisAlignment: CrossAxisAlignment.end,
@@ -779,15 +801,45 @@ class _LinkText extends StatelessWidget {
   }
 }
 
-class _ImageThumb extends StatelessWidget {
+class _ImageThumb extends StatefulWidget {
   const _ImageThumb({required this.message, required this.file, required this.size});
   final RecordModel message;
   final String file;
   final double size;
 
   @override
+  State<_ImageThumb> createState() => _ImageThumbState();
+}
+
+class _ImageThumbState extends State<_ImageThumb> {
+  /// Фото по нажатию (если в настройках выключена автозагрузка).
+  bool _show = Settings.I.autoloadImages;
+
+  @override
   Widget build(BuildContext context) {
     final api = Api.I;
+    final size = widget.size;
+    final file = widget.file;
+    final message = widget.message;
+    if (!_show && !Settings.I.autoloadImages) {
+      return InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap: () => setState(() => _show = true),
+        child: Container(
+          width: size,
+          height: size * 0.6,
+          decoration: BoxDecoration(color: W.surface3, borderRadius: BorderRadius.circular(12)),
+          child: const Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(Icons.image_outlined, color: W.muted, size: 32),
+              SizedBox(height: 4),
+              Text('Нажми, чтобы показать фото', style: W.small),
+            ],
+          ),
+        ),
+      );
+    }
     final gif = file.toLowerCase().endsWith('.gif');
     final thumb = api.fileUrl(message, file, thumb: gif ? null : '480x0').toString();
     return GestureDetector(

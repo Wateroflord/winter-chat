@@ -33,9 +33,9 @@ class W {
   ];
 }
 
-ThemeData buildTheme() {
-  const scheme = ColorScheme.dark(
-    primary: W.ice,
+ThemeData buildTheme({Color accent = W.ice}) {
+  final scheme = ColorScheme.dark(
+    primary: accent,
     onPrimary: W.bg,
     secondary: W.iceLight,
     surface: W.surface,
@@ -68,11 +68,11 @@ ThemeData buildTheme() {
       contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
       border: border,
       enabledBorder: border,
-      focusedBorder: border.copyWith(borderSide: const BorderSide(color: W.ice, width: 1.4)),
+      focusedBorder: border.copyWith(borderSide: BorderSide(color: accent, width: 1.4)),
     ),
     filledButtonTheme: FilledButtonThemeData(
       style: FilledButton.styleFrom(
-        backgroundColor: W.ice,
+        backgroundColor: accent,
         foregroundColor: W.bg,
         padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
@@ -98,9 +98,15 @@ ThemeData buildTheme() {
       contentTextStyle: TextStyle(color: W.text),
       behavior: SnackBarBehavior.floating,
     ),
-    progressIndicatorTheme: const ProgressIndicatorThemeData(color: W.ice),
+    progressIndicatorTheme: ProgressIndicatorThemeData(color: accent),
+    switchTheme: SwitchThemeData(
+      thumbColor: WidgetStateProperty.resolveWith((s) => s.contains(WidgetState.selected) ? W.bg : W.muted),
+      trackColor: WidgetStateProperty.resolveWith((s) => s.contains(WidgetState.selected) ? accent : W.surface3),
+      trackOutlineColor: const WidgetStatePropertyAll(Colors.transparent),
+    ),
+    sliderTheme: SliderThemeData(activeTrackColor: accent, thumbColor: accent, inactiveTrackColor: W.surface3),
     checkboxTheme: CheckboxThemeData(
-      fillColor: WidgetStateProperty.resolveWith((s) => s.contains(WidgetState.selected) ? W.ice : Colors.transparent),
+      fillColor: WidgetStateProperty.resolveWith((s) => s.contains(WidgetState.selected) ? accent : Colors.transparent),
       checkColor: const WidgetStatePropertyAll(W.bg),
       side: const BorderSide(color: W.muted),
     ),

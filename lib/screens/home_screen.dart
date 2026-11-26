@@ -6,6 +6,8 @@ import 'package:pocketbase/pocketbase.dart';
 
 import '../api.dart';
 import '../call_controller.dart';
+import '../settings.dart';
+import '../sounds.dart';
 import '../store.dart';
 import '../theme.dart';
 import '../util.dart';
@@ -13,7 +15,7 @@ import '../widgets/avatar.dart';
 import 'call_screen.dart';
 import 'chat_screen.dart';
 import 'people_sheet.dart';
-import 'profile_sheet.dart';
+import 'settings_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -25,6 +27,7 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   String? _selected;
   StreamSubscription<RecordModel>? _incomingSub;
+  StreamSubscription<String>? _messagesSub;
   final Set<String> _rungFor = {};
 
   @override
@@ -35,7 +38,17 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     CallController.I.addListener(_changed);
     Store.I.start();
     _incomingSub = Store.I.incomingCalls.listen(_onIncoming);
+    _messagesSub = Store.I.newMessages.listen(_onNewMessage);
   }
+
+  /// Звук нового сообщения (если этот чат сейчас не открыт).
+  void _onNewMessage(String chatId) {
+    if (_wide && _selected == chatId) return;
+    if (!_wide && _openChatId == chatId) return;
+    Sounds.message();
+  }
+
+  String? _openChatId;
 
   @override
   void dispose() {
@@ -43,6 +56,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     Store.I.removeListener(_changed);
     CallController.I.removeListener(_changed);
     _incomingSub?.cancel();
+    _messagesSub?.cancel();
     Store.I.stop();
     super.dispose();
   }
@@ -62,7 +76,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     if (_wide) {
       setState(() => _selected = chat.id);
     } else {
-      Navigator.of(context).push(MaterialPageRoute(builder: (_) => ChatScreen(chatId: chat.id)));
+      _openChatId = chat.id;
+      Navigator.of(context)
+          .push(MaterialPageRoute(builder: (_) => ChatScreen(chatId: chat.id)))
+          .whenComplete(() => _openChatId = null);
     }
   }
 
@@ -157,11 +174,16 @@ class _ChatList extends StatelessWidget {
               if (chat != null) onOpen(chat);
             },
           ),
+          IconButton(
+            tooltip: 'Настройки',
+            icon: const Icon(Icons.settings_outlined),
+            onPressed: () => openSettings(context),
+          ),
           Padding(
             padding: const EdgeInsets.only(right: 10, left: 2),
             child: InkWell(
               customBorder: const CircleBorder(),
-              onTap: () => showProfile(context),
+              onTap: () => openSettings(context),
               child: UserAvatar(api.myId, size: 34),
             ),
           ),
@@ -190,6 +212,8 @@ class _ChatList extends StatelessWidget {
               Text(store.error!, textAlign: TextAlign.center, style: W.body),
               const SizedBox(height: 14),
               OutlinedButton(onPressed: () => store.refresh(), child: const Text('Повторить')),
+              const SizedBox(height: 18),
+              const VpnHint(),
             ],
           ),
         ),
@@ -398,8 +422,11 @@ Future<bool?> showIncomingCall(
   required String title,
   String? callerId,
 }) {
-  final ring = Timer.periodic(const Duration(seconds: 2), (_) => SystemSound.play(SystemSoundType.alert));
-  SystemSound.play(SystemSoundType.alert);
+  final ringOn = Settings.I.ringSound && !Settings.I.dnd;
+  final ring = Timer.periodic(const Duration(seconds: 2), (_) {
+    if (ringOn) SystemSound.play(SystemSoundType.alert);
+  });
+  if (ringOn) SystemSound.play(SystemSoundType.alert);
   final callerName = callerId == null ? title : Api.I.nameOf(callerId);
   var closed = false;
   BuildContext? dialogCtx;

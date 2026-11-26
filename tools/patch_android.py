@@ -73,7 +73,11 @@ m.write_text(t, encoding="utf-8")
     "-keep class org.webrtc.** { *; }\n"
     "-keep class com.cloudwebrtc.webrtc.** { *; }\n"
     "-keep class io.livekit.** { *; }\n"
-    "-dontwarn org.webrtc.**\n",
+    "-dontwarn org.webrtc.**\n"
+    # Видеоплеер в чате (media_kit / libmpv).
+    "-keep class com.alexmercerind.** { *; }\n"
+    "-keep class is.xyz.mpv.** { *; }\n"
+    "-dontwarn com.alexmercerind.**\n",
     encoding="utf-8",
 )
 g = ROOT / "build.gradle.kts"
