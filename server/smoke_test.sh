@@ -179,6 +179,33 @@ code=$(curl -s -o /dev/null -w '%{http_code}' -X DELETE $B/api/collections/games
 [ "$code" = "204" ] || fail "удалить законченную гонку ($code)"
 ok "гонка в сапёр: личное приглашение, свой прогресс, победитель на сервере"
 
+# Общие доски задач («Фокус» в КБЖУ Трекере)
+curl -s $B/api/wc/info | jq -e '.boards==1' >/dev/null || fail "сервер не сообщает о досках"
+U3=$(curl -s "$B/api/collections/users/records?filter=username='petya'" -H "Authorization: $T1" | jq -r '.items[0].id')
+BD=$(curl -s -X POST $B/api/collections/boards/records -H "Authorization: $T1" -H "$J" -d "{\"name\":\"FalseMemory\",\"members\":[\"$U2\"],\"owner\":\"$U2\"}" | tee /dev/stderr)
+BID=$(echo "$BD" | jq -r .id)
+[ "$(echo "$BD" | jq -r .owner)" = "$U1" ] || fail "хозяин доски: $BD"
+echo "$BD" | jq -e --arg u "$U1" '.members|index($u)' >/dev/null || fail "хозяин не в участниках: $BD"
+n=$(curl -s "$B/api/collections/boards/records" -H "Authorization: $T2" | jq '.items|length')
+[ "$n" = "1" ] || fail "участник не видит доску ($n)"
+n=$(curl -s "$B/api/collections/boards/records" -H "Authorization: $T3" | jq '.items|length')
+[ "$n" = "0" ] || fail "посторонний видит доску ($n)"
+TK=$(curl -s -X POST $B/api/collections/board_tasks/records -H "Authorization: $T2" -H "$J" -d "{\"board\":\"$BID\",\"title\":\"Сделать меню\",\"status\":\"todo\"}" | tee /dev/stderr)
+TID=$(echo "$TK" | jq -r .id)
+[ "$(echo "$TK" | jq -r .author)" = "$U2" ] || fail "автор задачи: $TK"
+code=$(curl -s -o /dev/null -w '%{http_code}' -X POST $B/api/collections/board_tasks/records -H "Authorization: $T3" -H "$J" -d "{\"board\":\"$BID\",\"title\":\"чужая\",\"status\":\"todo\"}")
+[ "$code" != "200" ] || fail "посторонний добавил задачу на чужую доску"
+curl -s -X PATCH $B/api/collections/board_tasks/records/$TID -H "Authorization: $T1" -H "$J" -d '{"status":"done"}' | jq -e '.status=="done"' >/dev/null || fail "перенести задачу в «Готово»"
+n=$(curl -s "$B/api/collections/board_tasks/records?filter=board='$BID'" -H "Authorization: $T3" | jq '.items|length')
+[ "$n" = "0" ] || fail "посторонний видит задачи ($n)"
+code=$(curl -s -o /dev/null -w '%{http_code}' -X PATCH $B/api/collections/boards/records/$BID -H "Authorization: $T2" -H "$J" -d "{\"members\":[\"$U1\",\"$U2\",\"$U3\"]}")
+[ "$code" = "403" ] || fail "участник сам добавил человека на доску ($code)"
+code=$(curl -s -o /dev/null -w '%{http_code}' -X DELETE $B/api/collections/boards/records/$BID -H "Authorization: $T2")
+[ "$code" != "204" ] || fail "участник удалил чужую доску"
+code=$(curl -s -o /dev/null -w '%{http_code}' -X DELETE $B/api/collections/boards/records/$BID -H "Authorization: $T1")
+[ "$code" = "204" ] || fail "хозяин не смог удалить доску ($code)"
+ok "общие доски: видят только участники, задачи двигают все участники, состав меняет хозяин"
+
 # Звонки
 for i in $(seq 1 20); do curl -sf $B/api/wc/info | jq -e .calls >/dev/null && break; sleep 1; done
 curl -sf $B/api/wc/info | jq -e .calls >/dev/null || fail "LiveKit не запустился"

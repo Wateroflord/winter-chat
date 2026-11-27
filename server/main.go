@@ -108,6 +108,7 @@ func main() {
 	registerArcHooks(app)
 	registerGamesHooks(app)
 	registerSocialHooks(app)
+	registerBoardsHooks(app)
 	registerRoutes(app)
 
 	lk := newLiveKit(app)
@@ -130,6 +131,9 @@ func main() {
 		}
 		if err := ensureSocialSchema(se.App); err != nil {
 			return fmt.Errorf("подготовка реакций и закрепов: %w", err)
+		}
+		if err := ensureBoardsSchema(se.App); err != nil {
+			return fmt.Errorf("подготовка общих досок задач: %w", err)
 		}
 		if err := ensureSuperuser(se.App); err != nil {
 			return fmt.Errorf("создание администратора: %w", err)

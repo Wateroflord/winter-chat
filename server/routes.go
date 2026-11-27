@@ -48,6 +48,7 @@ func registerRoutes(app core.App) {
 				"addresses": vpnAddresses(),
 				"games":     gamesInfo(),
 				"social":    1,
+				"boards":    1, // общие доски задач для «Фокуса»
 			})
 		})
 
