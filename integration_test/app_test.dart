@@ -154,7 +154,14 @@ void main() {
     // Меню закрывается с анимацией — ждём, пока оно уйдёт совсем.
     await waitUntil(t, () => find.byType(BottomSheet).evaluate().isEmpty, what: 'меню закрылось');
     await t.pump(const Duration(milliseconds: 400));
-    await openMenu(t, inChat('Привет, Алиса!'), 'второе');
+    debugPrintGestureArenaDiagnostics = true;
+    debugPrintRecognizerCallbacksTrace = true;
+    try {
+      await openMenu(t, inChat('Привет, Алиса!'), 'второе');
+    } finally {
+      debugPrintGestureArenaDiagnostics = false;
+      debugPrintRecognizerCallbacksTrace = false;
+    }
     await t.tap(find.text('Ответить'));
     await waitUntil(t, () => find.byType(BottomSheet).evaluate().isEmpty, what: 'меню закрылось');
     await t.pump(const Duration(milliseconds: 400));
