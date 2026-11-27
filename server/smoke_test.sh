@@ -201,6 +201,7 @@ code=$(curl -s -o /dev/null -w '%{http_code}' -X POST $B/api/collections/board_t
 curl -s -X PATCH $B/api/collections/board_tasks/records/$TID -H "Authorization: $T1" -H "$J" -d '{"status":"done"}' | jq -e '.status=="done"' >/dev/null || fail "перенести задачу в «Готово»"
 n=$(curl -s "$B/api/collections/board_tasks/records?filter=board='$BID'" -H "Authorization: $T3" | jq '.items|length')
 [ "$n" = "0" ] || fail "посторонний видит задачи ($n)"
+curl -s -X PATCH $B/api/collections/board_tasks/records/$TID -H "Authorization: $T2" -H "$J" -d '{"pomodoros+":2}' | jq -e '.pomodoros==2' >/dev/null || fail "помидоры задаче"
 code=$(curl -s -o /dev/null -w '%{http_code}' -X PATCH $B/api/collections/boards/records/$BID -H "Authorization: $T2" -H "$J" -d "{\"members\":[\"$U1\",\"$U2\",\"$U3\"]}")
 [ "$code" = "403" ] || fail "участник сам добавил человека на доску ($code)"
 code=$(curl -s -o /dev/null -w '%{http_code}' -X DELETE $B/api/collections/boards/records/$BID -H "Authorization: $T2")
@@ -208,6 +209,31 @@ code=$(curl -s -o /dev/null -w '%{http_code}' -X DELETE $B/api/collections/board
 code=$(curl -s -o /dev/null -w '%{http_code}' -X DELETE $B/api/collections/boards/records/$BID -H "Authorization: $T1")
 [ "$code" = "204" ] || fail "хозяин не смог удалить доску ($code)"
 ok "общие доски: видят только участники, задачи двигают все участники, состав меняет хозяин"
+
+# Раздел «Друзья»: игровые вечера, Winter Cloud, Dota-номер
+curl -s $B/api/wc/info | jq -e '.friends==1' >/dev/null || fail "сервер не сообщает о разделе «Друзья»"
+GN=$(curl -s -X POST $B/api/collections/game_nights/records -H "Authorization: $T1" -H "$J" -d '{"game":"Dota 2","at":"2030-01-01 19:00:00.000Z","note":"турбо"}' | tee /dev/stderr)
+GID=$(echo "$GN" | jq -r .id)
+echo "$GN" | jq -e --arg u "$U1" '.author==$u and (.going|index($u))!=null' >/dev/null || fail "автор вечера идёт: $GN"
+curl -s -X PATCH $B/api/collections/game_nights/records/$GID -H "Authorization: $T2" -H "$J" -d "{\"maybe+\":\"$U2\"}" | jq -e --arg u "$U2" '.maybe|index($u)!=null' >/dev/null || fail "друг не отметился «может быть»"
+code=$(curl -s -o /dev/null -w '%{http_code}' -X PATCH $B/api/collections/game_nights/records/$GID -H "Authorization: $T2" -H "$J" -d "{\"going-\":\"$U1\"}")
+[ "$code" = "403" ] || fail "друг убрал автора из идущих ($code)"
+R=$(curl -s -X PATCH $B/api/collections/game_nights/records/$GID -H "Authorization: $T2" -H "$J" -d '{"game":"CS2"}')
+echo "$R" | jq -e '.game=="Dota 2"' >/dev/null || fail "друг поменял игру: $R"
+code=$(curl -s -o /dev/null -w '%{http_code}' -X DELETE $B/api/collections/game_nights/records/$GID -H "Authorization: $T2")
+[ "$code" != "204" ] || fail "друг удалил чужой вечер"
+echo "привет из облака" > /tmp/wc_cloud.txt
+CF=$(curl -s -X POST $B/api/collections/cloud_files/records -H "Authorization: $T1" -F "file=@/tmp/wc_cloud.txt" -F "owner=$U2" | tee /dev/stderr)
+CID=$(echo "$CF" | jq -r .id)
+echo "$CF" | jq -e --arg u "$U1" '.owner==$u and .name=="wc_cloud.txt" and .size>0' >/dev/null || fail "файл в облаке: $CF"
+n=$(curl -s "$B/api/collections/cloud_files/records" -H "Authorization: $T2" | jq '.items|length')
+[ "$n" = "1" ] || fail "друг не видит файл в облаке ($n)"
+code=$(curl -s -o /dev/null -w '%{http_code}' -X DELETE $B/api/collections/cloud_files/records/$CID -H "Authorization: $T2")
+[ "$code" != "204" ] || fail "друг удалил чужой файл"
+code=$(curl -s -o /dev/null -w '%{http_code}' -X DELETE $B/api/collections/cloud_files/records/$CID -H "Authorization: $T1")
+[ "$code" = "204" ] || fail "хозяин не удалил файл ($code)"
+curl -s -X PATCH $B/api/collections/users/records/$U1 -H "Authorization: $T1" -H "$J" -d '{"dota_id":"123456789"}' | jq -e '.dota_id=="123456789"' >/dev/null || fail "dota_id в профиле"
+ok "друзья: игровые вечера, Winter Cloud, Dota-номер"
 
 # Звонки
 for i in $(seq 1 20); do curl -sf $B/api/wc/info | jq -e .calls >/dev/null && break; sleep 1; done

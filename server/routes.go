@@ -49,6 +49,7 @@ func registerRoutes(app core.App) {
 				"games":     gamesInfo(),
 				"social":    1,
 				"boards":    1, // общие доски задач для «Фокуса»
+				"friends":   1, // игровые вечера, Winter Cloud, Dota-статистика
 			})
 		})
 
