@@ -57,6 +57,9 @@ jobs:
           curl -s -X POST $B/api/collections/users/records -H 'Content-Type: application/json' \
             -d "{\"username\":\"bob\",\"name\":\"Боб\",\"password\":\"password123\",\"passwordConfirm\":\"password123\",\"invite\":\"$INVITE\"}" | jq -c .
           TB=$(curl -s -X POST $B/api/collections/users/auth-with-password -H 'Content-Type: application/json' -d '{"identity":"bob","password":"password123"}' | jq -r .token)
+          BOB=$(curl -s $B/api/collections/users/records -H "Authorization: $TB" | jq -r '.items[] | select(.username=="bob") | .id')
+          curl -s -X PATCH $B/api/collections/users/records/$BOB -H "Authorization: $TB" -H 'Content-Type: application/json' \
+            -d '{"status":"Играю в доту","status_emoji":"🎮","bio":"Пишу музыку и катаю в доту по вечерам.","color":"#FF78AA"}' | jq -c '{status,color}'
           # Боб отвечает, когда Алиса напишет первое сообщение.
           nohup bash -c "
             for i in \$(seq 1 900); do

@@ -249,9 +249,15 @@ class Settings extends ChangeNotifier {
     }
   }
 
+  // Разобранные настройки чатов: читаются на каждом сообщении, поэтому держим в памяти.
+  Map<String, ChatPrefs>? _chatCache;
+
   ChatPrefs chatPrefs(String chatId) {
-    final j = _chats[chatId];
-    return j is Map ? ChatPrefs.fromJson(j) : const ChatPrefs();
+    final cache = _chatCache ??= {
+      for (final e in _chats.entries)
+        if (e.value is Map) e.key: ChatPrefs.fromJson(e.value as Map),
+    };
+    return cache[chatId] ?? const ChatPrefs();
   }
 
   Future<void> setChatPrefs(String chatId, ChatPrefs prefs) async {
@@ -262,6 +268,7 @@ class Settings extends ChangeNotifier {
       all[chatId] = prefs.toJson();
     }
     await _p.setString('set_chat_prefs', jsonEncode(all));
+    _chatCache = null;
     // Фоновые уведомления читают простой список чатов без звука.
     await _p.setStringList(kMutedChats, [
       for (final e in all.entries)

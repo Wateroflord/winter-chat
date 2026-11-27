@@ -9,10 +9,16 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:livekit_client/livekit_client.dart' show setLoggingLevel, LoggerLevel;
 import 'package:logging/logging.dart';
+import 'package:winter_chat/api.dart';
 import 'package:winter_chat/call_controller.dart';
 import 'package:winter_chat/main.dart' as app;
+import 'package:winter_chat/screens/appearance_screen.dart';
 import 'package:winter_chat/screens/call_screen.dart';
+import 'package:winter_chat/screens/profile_sheet.dart';
+import 'package:winter_chat/settings.dart';
 import 'package:winter_chat/store.dart';
+import 'package:winter_chat/theme.dart';
+import 'package:winter_chat/widgets/chat_background.dart';
 
 const server = String.fromEnvironment('SERVER', defaultValue: '127.0.0.1:8090');
 const invite = String.fromEnvironment('INVITE');
@@ -115,6 +121,44 @@ void main() {
     await waitUntil(t, () => !CallController.I.active, what: 'завершение звонка');
     await waitUntil(t, () => Store.I.callParticipants(chatId).isEmpty, seconds: 20, what: 'сервер убрал звонок');
     await shot(t, '07_after_call');
+
+    // --- профиль друга (статус и цвет Боба выставил скрипт на сервере) ---
+    await waitUntil(t, () => Api.I.statusText(Api.I.users.keys.firstWhere((id) => id != Api.I.myId, orElse: () => '')).isNotEmpty,
+        seconds: 20, what: 'статус Боба');
+    await t.tap(find.text('Боб').last);
+    await waitFor(t, find.text('Написать'), what: 'карточка профиля');
+    await shot(t, '08_profile');
+    app.navigatorKey.currentState!.pop();
+    await t.pump(const Duration(milliseconds: 500));
+
+    // --- оформление: светлая тема, круглые пузыри, свой градиент ---
+    final s = Settings.I;
+    s.palette = paletteById('light');
+    s.accent = const Color(0xFF5B9DFF);
+    s.bubbleStyle = 1;
+    s.wallpaper = Wallpaper.gradient(0xFFDCEBFA, 0xFFF4E9F2, angle: 1, pattern: false);
+    await t.pump(const Duration(milliseconds: 600));
+    await shot(t, '09_light_theme');
+
+    // --- «как в Discord»: список, тёмная «Полночь», квадратные аватары ---
+    s.palette = paletteById('midnight');
+    s.accent = const Color(0xFFBE8CFF);
+    s.bubbleStyle = 3;
+    s.squareAvatars = true;
+    s.wallpaper = const Wallpaper.preset(4);
+    await t.pump(const Duration(milliseconds: 600));
+    await shot(t, '10_list_style');
+
+    app.navigatorKey.currentState!.push(MaterialPageRoute(builder: (_) => const AppearanceScreen()));
+    await waitFor(t, find.text('ТЕМА'), what: 'экран оформления');
+    await shot(t, '11_appearance');
+    app.navigatorKey.currentState!.pop();
+    app.navigatorKey.currentState!.push(MaterialPageRoute(builder: (_) => const ProfileEditScreen()));
+    await waitFor(t, find.text('Сохранить профиль'), what: 'редактор профиля');
+    await shot(t, '12_profile_edit');
+    app.navigatorKey.currentState!.pop();
+    await s.resetAppearance();
+    await t.pump(const Duration(milliseconds: 600));
     // ignore: avoid_print
     print('ALL UI CHECKS PASSED');
   });
