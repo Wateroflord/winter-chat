@@ -60,20 +60,30 @@ jobs:
           BOB=$(curl -s $B/api/collections/users/records -H "Authorization: $TB" | jq -r '.items[] | select(.username=="bob") | .id')
           curl -s -X PATCH $B/api/collections/users/records/$BOB -H "Authorization: $TB" -H 'Content-Type: application/json' \
             -d '{"status":"Играю в доту","status_emoji":"🎮","bio":"Пишу музыку и катаю в доту по вечерам.","color":"#FF78AA"}' | jq -c '{status,color}'
-          # Боб отвечает, когда Алиса напишет первое сообщение.
-          nohup bash -c "
-            for i in \$(seq 1 900); do
-              CH=\$(curl -s '$B/api/collections/chats/records' -H 'Authorization: $TB' | jq -r '.items[0].id // empty')
-              if [ -n \"\$CH\" ]; then
-                n=\$(curl -s -G '$B/api/collections/messages/records' --data-urlencode \"filter=chat='\$CH'\" -H 'Authorization: $TB' | jq '.items|length')
-                if [ \"\$n\" -ge 1 ]; then
-                  sleep 2
-                  curl -s -X POST '$B/api/collections/messages/records' -H 'Authorization: $TB' -F \"chat=\$CH\" -F 'text=Привет, Алиса!' > bob.txt
-                  exit 0
-                fi
+          # Боб отвечает, когда Алиса напишет первое сообщение, ставит реакцию,
+          # читает чат и «печатает».
+          cat > bob.sh <<'BOB'
+          B=$1; TB=$2; BOB=$3
+          api() { curl -s -X POST "$B$1" -H "Authorization: $TB" -H 'Content-Type: application/json' -d "$2"; echo; }
+          for i in $(seq 1 900); do
+            CH=$(curl -s "$B/api/collections/chats/records" -H "Authorization: $TB" | jq -r '.items[0].id // empty')
+            if [ -n "$CH" ]; then
+              M=$(curl -s -G "$B/api/collections/messages/records" --data-urlencode "filter=chat='$CH' && author!='$BOB'" -H "Authorization: $TB" | jq -r '.items[0].id // empty')
+              if [ -n "$M" ]; then
+                sleep 2
+                curl -s -X POST "$B/api/collections/messages/records" -H "Authorization: $TB" -F "chat=$CH" -F 'text=Привет, Алиса!' > bob.txt
+                sleep 2
+                api /api/wc/react "{\"message\":\"$M\",\"emoji\":\"🔥\"}"
+                api /api/wc/read "{\"chat\":\"$CH\"}"
+                api /api/wc/ping '{}'
+                for j in $(seq 1 30); do api /api/wc/typing "{\"chat\":\"$CH\"}"; sleep 2; done
+                exit 0
               fi
-              sleep 1
-            done" > bob.log 2>&1 &
+            fi
+            sleep 1
+          done
+          BOB
+          nohup bash bob.sh "$B" "$TB" "$BOB" > bob.log 2>&1 &
       - uses: subosito/flutter-action@v2
         with:
           channel: stable

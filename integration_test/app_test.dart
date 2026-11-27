@@ -14,7 +14,9 @@ import 'package:winter_chat/call_controller.dart';
 import 'package:winter_chat/main.dart' as app;
 import 'package:winter_chat/screens/appearance_screen.dart';
 import 'package:winter_chat/screens/call_screen.dart';
+import 'package:winter_chat/screens/chat_screen.dart';
 import 'package:winter_chat/screens/profile_sheet.dart';
+import 'package:winter_chat/screens/search_screen.dart';
 import 'package:winter_chat/settings.dart';
 import 'package:winter_chat/store.dart';
 import 'package:winter_chat/theme.dart';
@@ -108,6 +110,49 @@ void main() {
     // Ответ Боба приходит с сервера в реальном времени (его отправляет скрипт).
     await waitFor(t, find.text('Привет, Алиса!'), seconds: 40, what: 'ответ Боба в реальном времени');
     await shot(t, '05_chat');
+
+    // --- ✓✓ прочитано, реакция и «печатает…» от Боба (скрипт на сервере) ---
+    await waitFor(t, find.text('🔥 1'), seconds: 30, what: 'реакция Боба 🔥');
+    await waitFor(t, find.byIcon(Icons.done_all), seconds: 30, what: '✓✓ — Боб прочитал');
+    await waitFor(t, find.text('печатает…'), seconds: 30, what: '«печатает…» от Боба');
+    await shot(t, '05a_read_typing');
+
+    // --- своя реакция и ответ с цитатой ---
+    Finder inChat(String text) => find.descendant(of: find.byType(ChatScreen), matching: find.text(text));
+    await t.longPress(inChat('Привет, Алиса!'));
+    await waitFor(t, find.text('Ответить'), what: 'меню сообщения');
+    await shot(t, '05b_menu');
+    await t.tap(find.text('👍').last);
+    await waitFor(t, find.text('👍 1'), what: 'моя реакция 👍');
+    await t.longPress(inChat('Привет, Алиса!'));
+    await waitFor(t, find.text('Ответить'), what: 'меню сообщения');
+    await t.tap(find.text('Ответить'));
+    await t.pump(const Duration(milliseconds: 400));
+    await t.enterText(composer, 'Отвечаю с цитатой');
+    await t.pump(const Duration(milliseconds: 200));
+    await t.tap(find.byIcon(Icons.send_rounded));
+    await waitFor(t, find.text('Отвечаю с цитатой'), what: 'ответ с цитатой');
+    // Цитата: имя автора и текст исходного сообщения внутри ответа.
+    expect(inChat('Привет, Алиса!'), findsAtLeastNWidgets(2));
+
+    // --- закрепить ---
+    await t.longPress(inChat('Привет из теста'));
+    await waitFor(t, find.text('Закрепить'), what: 'меню: закрепить');
+    await t.tap(find.text('Закрепить'));
+    await waitUntil(t, () => (Store.I.chat(t.widget<ChatScreen>(find.byType(ChatScreen)).chatId)?.getListValue<String>('pins') ?? const []).isNotEmpty,
+        what: 'сервер сохранил закреп');
+    await t.pump(const Duration(milliseconds: 500));
+    await shot(t, '05c_reply_pin');
+
+    // --- поиск ---
+    final cid = t.widget<ChatScreen>(find.byType(ChatScreen)).chatId;
+    app.navigatorKey.currentState!.push(MaterialPageRoute(builder: (_) => SearchScreen(chatId: cid)));
+    await t.pump(const Duration(milliseconds: 500));
+    await t.enterText(find.descendant(of: find.byType(SearchScreen), matching: find.byType(TextField)), 'цитат');
+    await waitFor(t, find.descendant(of: find.byType(SearchScreen), matching: find.byType(ListTile)), what: 'результат поиска');
+    await shot(t, '05d_search');
+    app.navigatorKey.currentState!.pop();
+    await t.pump(const Duration(milliseconds: 500));
 
     // --- звонок ---
     await t.tap(find.byTooltip('Аудиозвонок'));

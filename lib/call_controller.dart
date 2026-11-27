@@ -126,7 +126,7 @@ class CallController extends ChangeNotifier {
       error = e is String ? e : 'Не удалось подключиться к звонку: $e';
       if (r != null) {
         r.removeListener(notifyListeners);
-        unawaited(r.dispose().catchError((_) {}));
+        unawaited(r.dispose().catchError((_) => false));
       }
       room = null;
       this.chatId = null;
