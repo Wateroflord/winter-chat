@@ -13,6 +13,7 @@ import '../util.dart';
 import '../widgets/avatar.dart';
 import 'call_screen.dart';
 import 'chat_screen.dart';
+import 'friends_screen.dart';
 import 'people_sheet.dart';
 import 'settings_screen.dart';
 
@@ -167,6 +168,11 @@ class _ChatList extends StatelessWidget {
           ],
         ),
         actions: [
+          IconButton(
+            tooltip: 'Друзья: игровые вечера, Dota, облако',
+            icon: const Icon(Icons.sports_esports_outlined),
+            onPressed: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const FriendsScreen())),
+          ),
           IconButton(
             tooltip: 'Новый чат',
             icon: const Icon(Icons.edit_square),
