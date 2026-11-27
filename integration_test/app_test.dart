@@ -66,6 +66,15 @@ Future<void> waitUntil(WidgetTester t, bool Function() cond, {int seconds = 25, 
 /// Долгое нажатие на сообщение, пока не откроется меню (с диагностикой).
 Future<void> openMenu(WidgetTester t, Finder target, String name) async {
   for (var attempt = 1; attempt <= 4; attempt++) {
+    // Диагностика: что лежит под пальцем и не крутится ли список.
+    final at = t.getCenter(target);
+    final hit = HitTestResult();
+    t.binding.hitTestInView(hit, at, t.view.viewId);
+    final scrolls = find.byType(Scrollable).evaluate().map((e) => (e as StatefulElement).state as ScrollableState);
+    // ignore: avoid_print
+    print('HIT $name#$attempt @$at: ${hit.path.take(40).map((e) => e.target.runtimeType).join(' < ')}');
+    // ignore: avoid_print
+    print('SCROLLING $name#$attempt: ${scrolls.map((s) => s.position.isScrollingNotifier.value).toList()}');
     await t.longPress(target);
     for (var i = 0; i < 20; i++) {
       await t.pump(const Duration(milliseconds: 100));
