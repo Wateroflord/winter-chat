@@ -3,6 +3,7 @@
 import 'dart:io';
 import 'dart:ui' as ui;
 
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -62,6 +63,24 @@ Future<void> waitUntil(WidgetTester t, bool Function() cond, {int seconds = 25, 
   fail('Не дождался: $what');
 }
 
+/// Долгое нажатие на сообщение, пока не откроется меню (с диагностикой).
+Future<void> openMenu(WidgetTester t, Finder target, String name) async {
+  for (var attempt = 1; attempt <= 4; attempt++) {
+    await t.longPress(target);
+    for (var i = 0; i < 20; i++) {
+      await t.pump(const Duration(milliseconds: 100));
+      if (find.text('Ответить').evaluate().isNotEmpty) {
+        // ignore: avoid_print
+        print('MENU $name: попытка $attempt');
+        return;
+      }
+      await t.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 150)));
+    }
+  }
+  await shot(t, 'timeout');
+  fail('Не открылось меню сообщения: $name');
+}
+
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
   hierarchicalLoggingEnabled = true;
@@ -119,16 +138,14 @@ void main() {
 
     // --- своя реакция и ответ с цитатой ---
     Finder inChat(String text) => find.descendant(of: find.byType(ChatScreen), matching: find.text(text));
-    await t.longPress(inChat('Привет, Алиса!'));
-    await waitFor(t, find.text('Ответить'), what: 'меню сообщения');
+    await openMenu(t, inChat('Привет, Алиса!'), 'первое');
     await shot(t, '05b_menu');
     await t.tap(find.text('👍').last);
     await waitFor(t, find.text('👍 1'), what: 'моя реакция 👍');
     // Меню закрывается с анимацией — ждём, пока оно уйдёт совсем.
     await waitUntil(t, () => find.byType(BottomSheet).evaluate().isEmpty, what: 'меню закрылось');
     await t.pump(const Duration(milliseconds: 400));
-    await t.longPress(inChat('Привет, Алиса!'));
-    await waitFor(t, find.text('Ответить'), what: 'меню сообщения');
+    await openMenu(t, inChat('Привет, Алиса!'), 'второе');
     await t.tap(find.text('Ответить'));
     await waitUntil(t, () => find.byType(BottomSheet).evaluate().isEmpty, what: 'меню закрылось');
     await t.pump(const Duration(milliseconds: 400));
@@ -140,13 +157,15 @@ void main() {
     expect(inChat('Привет, Алиса!'), findsAtLeastNWidgets(2));
 
     // --- закрепить ---
-    await t.longPress(inChat('Привет из теста'));
-    await waitFor(t, find.text('Закрепить'), what: 'меню: закрепить');
+    // На ПК меню открывается правой кнопкой мыши.
+    await t.tap(inChat('Привет из теста'), buttons: kSecondaryButton, kind: PointerDeviceKind.mouse);
+    await waitFor(t, find.text('Закрепить'), what: 'меню по правой кнопке: закрепить');
+    await shot(t, '05c_context_menu');
     await t.tap(find.text('Закрепить'));
     await waitUntil(t, () => (Store.I.chat(t.widget<ChatScreen>(find.byType(ChatScreen)).chatId)?.getListValue<String>('pins') ?? const []).isNotEmpty,
         what: 'сервер сохранил закреп');
     await t.pump(const Duration(milliseconds: 500));
-    await shot(t, '05c_reply_pin');
+    await shot(t, '05d_reply_pin');
 
     // --- поиск ---
     final cid = t.widget<ChatScreen>(find.byType(ChatScreen)).chatId;
@@ -154,7 +173,7 @@ void main() {
     await t.pump(const Duration(milliseconds: 500));
     await t.enterText(find.descendant(of: find.byType(SearchScreen), matching: find.byType(TextField)), 'цитат');
     await waitFor(t, find.descendant(of: find.byType(SearchScreen), matching: find.byType(ListTile)), what: 'результат поиска');
-    await shot(t, '05d_search');
+    await shot(t, '05e_search');
     app.navigatorKey.currentState!.pop();
     await t.pump(const Duration(milliseconds: 500));
 
