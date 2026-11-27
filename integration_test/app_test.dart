@@ -174,8 +174,10 @@ void main() {
     // --- поиск ---
     final cid = t.widget<ChatScreen>(find.byType(ChatScreen)).chatId;
     app.navigatorKey.currentState!.push(MaterialPageRoute(builder: (_) => SearchScreen(chatId: cid)));
-    await t.pump(const Duration(milliseconds: 500));
-    await t.enterText(find.descendant(of: find.byType(SearchScreen), matching: find.byType(TextField)), 'цитат');
+    final searchField = find.descendant(of: find.byType(SearchScreen), matching: find.byType(TextField));
+    await waitFor(t, searchField, what: 'экран поиска');
+    await t.pump(const Duration(milliseconds: 400));
+    await t.enterText(searchField, 'цитат');
     await waitFor(t, find.descendant(of: find.byType(SearchScreen), matching: find.byType(ListTile)), what: 'результат поиска');
     await shot(t, '05e_search');
     app.navigatorKey.currentState!.pop();
