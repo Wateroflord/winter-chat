@@ -14,8 +14,8 @@ import (
 var boardStatuses = []string{"todo", "doing", "done"}
 
 const (
-	boardMember = "@request.auth.id != '' && (owner = @request.auth.id || members ?= @request.auth.id)"
-	taskMember  = "@request.auth.id != '' && (board.owner = @request.auth.id || board.members ?= @request.auth.id)"
+	boardMember = "@request.auth.id != '' && (owner = @request.auth.id || members.id ?= @request.auth.id)"
+	taskMember  = "@request.auth.id != '' && (board.owner = @request.auth.id || board.members.id ?= @request.auth.id)"
 )
 
 func ensureBoardsSchema(app core.App) error {
@@ -87,6 +87,10 @@ func registerBoardsHooks(app core.App) {
 		orig := e.Record.Original()
 		owner := orig.GetString("owner")
 		e.Record.Set("owner", owner)
+		// Хозяин всегда остаётся участником.
+		if members := e.Record.GetStringSlice("members"); !slices.Contains(members, owner) {
+			e.Record.Set("members", append(members, owner))
+		}
 		if e.Auth.Id != owner {
 			before := orig.GetStringSlice("members")
 			after := e.Record.GetStringSlice("members")
