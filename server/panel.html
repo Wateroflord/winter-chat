@@ -103,6 +103,13 @@
     </div>
 
     <div class="card full">
+      <h2>Winter Cloud</h2>
+      <div class="muted">Общие файлы друзей (раздел «Друзья» → «Облако» в Winter Chat). Один файл — до 500 МБ. Файлы облака тоже попадают в резервные копии, поэтому не ставь лимит больше, чем свободно на диске.</div>
+      <div class="row"><span>Занято</span><span id="cloudUsed"></span></div>
+      <div class="row"><span>Всего места, ГБ</span><span><input id="cloudGB" type="number" min="1" max="2000" style="width:90px;padding:6px 8px;border-radius:8px;border:1px solid #2a3a5a;background:#0d1628;color:inherit"> <button onclick="saveCloud()">Сохранить</button></span></div>
+    </div>
+
+    <div class="card full">
       <h2>Для продвинутых</h2>
       <div class="row"><span>Админка базы</span><a href="/_/" target="_blank">открыть</a></div>
       <div class="row"><span>Логин админки</span><span class="mono" id="aEmail"></span></div>
@@ -141,6 +148,11 @@ async function load() {
   $('users').innerHTML = (s.users || []).map(u => `<tr><td class="mono">${esc(u.username)}</td><td>${esc(u.name)}</td><td class="muted">${esc((u.created||'').slice(0,16))}</td><td><button onclick="resetPass('${esc(u.id)}','${esc(u.username)}')">Сменить пароль</button></td></tr>`).join('');
   $('noUsers').textContent = (s.users || []).length ? '' : 'Пока никто не зарегистрировался.';
   $('aEmail').textContent = s.adminEmail; $('aPass').textContent = s.adminPassword; $('dataDir').textContent = s.dataDir;
+  if (s.cloud) {
+    const gb = n => (n / 1073741824).toFixed(1).replace('.', ',');
+    $('cloudUsed').textContent = gb(s.cloud.used) + ' из ' + gb(s.cloud.limit) + ' ГБ';
+    if (document.activeElement !== $('cloudGB')) $('cloudGB').value = Math.round(s.cloud.limit / 1073741824);
+  }
   $('bPath').textContent = s.backupsPath || '';
   if (document.activeElement !== $('bDir')) $('bDir').value = s.backupDir || '';
   const mb = n => (n / 1048576).toFixed(n > 10485760 ? 0 : 1) + ' МБ';
@@ -158,6 +170,11 @@ async function backupNow() {
 async function saveBackupDir() {
   const r = await fetch('/api/wc/panel/backup-dir', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({dir: $('bDir').value})});
   const j = await r.json(); if (!r.ok) alert(j.message || 'Не удалось'); else alert(j.dir ? 'Копии будут ещё и в ' + j.dir : 'Дополнительная папка выключена');
+  load();
+}
+async function saveCloud() {
+  const r = await fetch('/api/wc/panel/cloud-limit', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({gb: parseInt($('cloudGB').value, 10)})});
+  const j = await r.json(); if (!r.ok) alert(j.message || 'Не удалось'); else alert('Под облако: ' + Math.round(j.limit / 1073741824) + ' ГБ');
   load();
 }
 async function openBackups() { await fetch('/api/wc/panel/open-backups', {method:'POST'}); }

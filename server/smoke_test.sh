@@ -233,6 +233,12 @@ code=$(curl -s -o /dev/null -w '%{http_code}' -X DELETE $B/api/collections/cloud
 code=$(curl -s -o /dev/null -w '%{http_code}' -X DELETE $B/api/collections/cloud_files/records/$CID -H "Authorization: $T1")
 [ "$code" = "204" ] || fail "хозяин не удалил файл ($code)"
 curl -s -X PATCH $B/api/collections/users/records/$U1 -H "Authorization: $T1" -H "$J" -d '{"dota_id":"123456789"}' | jq -e '.dota_id=="123456789"' >/dev/null || fail "dota_id в профиле"
+curl -s $B/api/wc/cloud -H "Authorization: $T2" | jq -e '.limit>0 and .fileMax==524288000 and .used==0' >/dev/null || fail "место в облаке"
+code=$(curl -s -o /dev/null -w '%{http_code}' $B/api/wc/cloud)
+[ "$code" = "401" ] || fail "место в облаке без входа ($code)"
+code=$(curl -s -o /dev/null -w '%{http_code}' -X POST $B/api/wc/panel/cloud-limit -H "$J" -d '{"gb":0}')
+[ "$code" = "400" ] || fail "лимит облака 0 ГБ принят ($code)"
+curl -s -X POST $B/api/wc/panel/cloud-limit -H "$J" -d '{"gb":25}' | jq -e '.limit==26843545600' >/dev/null || fail "лимит облака из панели"
 ok "друзья: игровые вечера, Winter Cloud, Dota-номер"
 
 # Звонки

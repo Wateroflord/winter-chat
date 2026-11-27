@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:winter_chat/dota.dart';
+import 'package:winter_chat/night_remind.dart';
 import 'package:winter_chat/screens/friends_logic.dart';
 
 DotaMatch m(bool win, {int k = 5, int d = 5, int a = 5, int start = 0}) =>
@@ -78,6 +79,25 @@ void main() {
       final ch = rsvpChange('maybe', 'going', 'me');
       expect(ch, {'maybe+': 'me', 'going-': 'me', 'no-': 'me'});
       expect(rsvpChange('', 'going', 'me'), {'going-': 'me', 'maybe-': 'me', 'no-': 'me'});
+    });
+  });
+  group('Напоминание о вечере', () {
+    test('за 30 минут, один раз, только будущие', () {
+      final now = DateTime(2026, 11, 28, 19, 40);
+      String at(int min) => now.add(Duration(minutes: min)).toUtc().toIso8601String().replaceFirst('T', ' ');
+      final items = <Map>[
+        {'id': 'a', 'game': 'Dota 2', 'at': at(20), 'going': ['me', 'x'], 'note': ''},
+        {'id': 'b', 'game': 'CS2', 'at': at(50), 'going': ['me']},
+        {'id': 'c', 'game': 'Minecraft', 'at': at(-5), 'going': ['me']},
+        {'id': 'd', 'game': 'Roblox', 'at': at(10), 'going': ['me'], 'note': 'турбо'},
+      ];
+      final due = NightRemind.due(items, now, {'d'});
+      expect(due.map((x) => x.id), ['a']);
+      expect(due.single.title, contains('Через 20 мин: Dota 2'));
+      expect(due.single.body, contains('идут: 2'));
+      final q = NightRemind.query('http://s:8090', 'me', now);
+      expect(q.path, '/api/collections/game_nights/records');
+      expect(q.queryParameters['filter'], startsWith("going.id ?= 'me'"));
     });
   });
 }

@@ -255,6 +255,11 @@ class _NightsTabState extends State<NightsTab> with _Live<NightsTab>, AutomaticK
             _rsvpButton(n, 'maybe', '🤔 Может быть', mine),
             _rsvpButton(n, 'no', '❌ Не смогу', mine),
           ]),
+          if (mine == 'going' && soon > 30)
+            Padding(
+              padding: const EdgeInsets.only(top: 6),
+              child: Text('🔔 Напомню за 30 минут до начала', style: W.small),
+            ),
         ]),
       ),
     );
@@ -639,6 +644,7 @@ class _CloudTabState extends State<CloudTab> with _Live<CloudTab>, AutomaticKeep
   String? error;
   String filter = 'all'; // all | mine | media | other
   String? uploading;
+  int used = 0, limit = 0, fileMax = 500 << 20;
 
   @override
   bool get wantKeepAlive => true;
@@ -661,6 +667,16 @@ class _CloudTabState extends State<CloudTab> with _Live<CloudTab>, AutomaticKeep
     try {
       files = await Api.I.pb.collection('cloud_files').getFullList(sort: '-created');
       error = null;
+      try {
+        final j = await Api.I.pb.send('/api/wc/cloud');
+        if (j is Map) {
+          used = (j['used'] as num?)?.toInt() ?? 0;
+          limit = (j['limit'] as num?)?.toInt() ?? 0;
+          fileMax = (j['fileMax'] as num?)?.toInt() ?? fileMax;
+        }
+      } catch (_) {
+        // Старый сервер без лимитов — просто не показываем место.
+      }
     } catch (e) {
       error = _err(e);
     }
@@ -680,8 +696,18 @@ class _CloudTabState extends State<CloudTab> with _Live<CloudTab>, AutomaticKeep
       if (mounted) toast(context, 'Не удалось выбрать файл: $e');
       return;
     }
-    final list = res?.files.where((f) => f.path != null || f.bytes != null).toList() ?? [];
+    final picked = res?.files.where((f) => f.path != null || f.bytes != null).toList() ?? [];
+    final big = picked.where((f) => f.size > fileMax).toList();
+    final list = picked.where((f) => f.size <= fileMax).toList();
+    if (big.isNotEmpty && mounted) {
+      toast(context, 'Больше ${humanSize(fileMax)} в облако нельзя: ${big.map((f) => f.name).join(', ')}');
+    }
     if (list.isEmpty) return;
+    final need = list.fold<int>(0, (s, f) => s + f.size);
+    if (limit > 0 && used + need > limit) {
+      if (mounted) toast(context, 'Не хватит места: свободно ${humanSize(limit - used)}, а файлы весят ${humanSize(need)}');
+      return;
+    }
     var done = 0;
     for (final f in list) {
       setState(() => uploading = 'Загружаю ${done + 1} из ${list.length}: ${f.name}');
@@ -766,6 +792,20 @@ class _CloudTabState extends State<CloudTab> with _Live<CloudTab>, AutomaticKeep
           ]),
           const SizedBox(height: 6),
           Text('Файлы видят и качают все на сервере. Всего: ${files.length} · ${humanSize(total)}', style: W.small),
+          if (limit > 0) ...[
+            const SizedBox(height: 6),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(4),
+              child: LinearProgressIndicator(
+                value: (used / limit).clamp(0, 1).toDouble(),
+                minHeight: 6,
+                backgroundColor: W.border,
+                color: used > limit * 0.9 ? W.bad : W.ice,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text('Занято ${humanSize(used)} из ${humanSize(limit)} · один файл — до ${humanSize(fileMax)}', style: W.small),
+          ],
           if (uploading != null) ...[
             const SizedBox(height: 10),
             const LinearProgressIndicator(),

@@ -56,6 +56,7 @@ func registerRoutes(app core.App) {
 		// Токен для входа в звонок чата.
 		registerSocialRoutes(se)
 		registerBackupPanelRoutes(se)
+		registerCloudRoutes(se)
 
 		r.POST("/api/wc/call-token", func(e *core.RequestEvent) error {
 			var body struct {
@@ -266,6 +267,7 @@ func panelData(app core.App) map[string]any {
 		"backups":       listBackups(app),
 		"backupsPath":   backupsDir(app),
 		"backupDir":     cfg.BackupDir,
+		"cloud":         cloudInfo(app),
 		"background":    background,
 		"ports": []map[string]any{
 			{"port": HTTPPort, "proto": "TCP", "what": "приложение, чаты, файлы"},

@@ -7,6 +7,7 @@ import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'night_remind.dart';
 import 'settings.dart';
 
 /// Уведомления о новых сообщениях, когда приложение закрыто или свёрнуто (Android).
@@ -84,6 +85,8 @@ class BgNotify {
   }
 
   static Future<void> check() async {
+    // Игровые вечера: напомнить за ~30 минут (даже если приложение закрыто).
+    await NightRemind.check(background: true);
     final p = await SharedPreferences.getInstance();
     await p.reload();
     final bgSince = p.getString(kBgSince);

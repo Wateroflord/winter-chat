@@ -39,6 +39,7 @@ type Config struct {
 	AdminPassword string `json:"adminPassword"`
 	ArcStart      string `json:"arcStart"`  // первый день Winter Arc (ГГГГ-ММ-ДД)
 	BackupDir     string `json:"backupDir"` // куда ещё класть автокопии (флешка, облачный диск)
+	CloudGB       int    `json:"cloudGB"`   // сколько всего места под Winter Cloud, ГБ (0 — по умолчанию)
 }
 
 var (

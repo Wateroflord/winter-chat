@@ -6,6 +6,7 @@ import 'package:media_kit/media_kit.dart';
 import 'api.dart';
 import 'bg_notify.dart';
 import 'instant.dart';
+import 'night_remind.dart';
 import 'screens/home_screen.dart';
 import 'screens/login_screen.dart';
 import 'settings.dart';
@@ -138,6 +139,7 @@ class _RootState extends State<Root> with WidgetsBindingObserver {
       Api.I.ping();
     }
     Instant.init();
+    NightRemind.start();
     if (mounted) setState(() => _booting = false);
   }
 
