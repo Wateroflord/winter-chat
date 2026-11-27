@@ -124,9 +124,13 @@ void main() {
     await shot(t, '05b_menu');
     await t.tap(find.text('👍').last);
     await waitFor(t, find.text('👍 1'), what: 'моя реакция 👍');
+    // Меню закрывается с анимацией — ждём, пока оно уйдёт совсем.
+    await waitUntil(t, () => find.byType(BottomSheet).evaluate().isEmpty, what: 'меню закрылось');
+    await t.pump(const Duration(milliseconds: 400));
     await t.longPress(inChat('Привет, Алиса!'));
     await waitFor(t, find.text('Ответить'), what: 'меню сообщения');
     await t.tap(find.text('Ответить'));
+    await waitUntil(t, () => find.byType(BottomSheet).evaluate().isEmpty, what: 'меню закрылось');
     await t.pump(const Duration(milliseconds: 400));
     await t.enterText(composer, 'Отвечаю с цитатой');
     await t.pump(const Duration(milliseconds: 200));
