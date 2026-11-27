@@ -437,7 +437,7 @@ class _ChatScreenState extends State<ChatScreen> {
           PopupMenuItem<String>(
             enabled: false,
             padding: const EdgeInsets.symmetric(horizontal: 6),
-            child: _ReactionRow(onPick: (e) => Navigator.of(context).pop('react:$e')),
+            child: _ReactionRow(compact: true, onPick: (e) => Navigator.of(context).pop('react:$e')),
           ),
           const PopupMenuDivider(),
           for (final it in items)
@@ -1257,19 +1257,24 @@ class MessageBubble extends StatelessWidget {
 
 /// Быстрые реакции в меню сообщения.
 class _ReactionRow extends StatelessWidget {
-  const _ReactionRow({required this.onPick});
+  const _ReactionRow({required this.onPick, this.compact = false});
   final void Function(String emoji) onPick;
+  // В узком меню по правой кнопке — помельче, чтобы все влезли в одну строку.
+  final bool compact;
   static const quick = ['👍', '❤️', '😂', '😮', '😢', '🔥', '👏', '🎉'];
 
   @override
   Widget build(BuildContext context) => Wrap(
-        spacing: 2,
+        spacing: compact ? 0 : 2,
         children: [
           for (final e in quick)
             InkWell(
               borderRadius: BorderRadius.circular(20),
               onTap: () => onPick(e),
-              child: Padding(padding: const EdgeInsets.all(6), child: Text(e, style: const TextStyle(fontSize: 22))),
+              child: Padding(
+                padding: EdgeInsets.all(compact ? 4 : 6),
+                child: Text(e, style: TextStyle(fontSize: compact ? 20 : 22)),
+              ),
             ),
         ],
       );
