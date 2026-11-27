@@ -1,7 +1,6 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:pocketbase/pocketbase.dart';
 
 import '../api.dart';
@@ -45,7 +44,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   void _onNewMessage(String chatId) {
     if (_wide && _selected == chatId) return;
     if (!_wide && _openChatId == chatId) return;
-    Sounds.message();
+    Sounds.message(chatId: chatId);
   }
 
   String? _openChatId;
@@ -105,7 +104,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       body: Row(
         children: [
           SizedBox(width: 340, child: list),
-          const VerticalDivider(width: 1, color: W.border),
+          VerticalDivider(width: 1, color: W.border),
           Expanded(
             child: sel == null
                 ? const _EmptyPane()
@@ -124,7 +123,7 @@ class _EmptyPane extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       color: W.bg,
-      child: const Center(
+      child: Center(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -153,12 +152,12 @@ class _ChatList extends StatelessWidget {
         titleSpacing: 16,
         title: Row(
           children: [
-            const Icon(Icons.ac_unit, color: W.ice, size: 20),
+            Icon(Icons.ac_unit, color: W.ice, size: 20),
             const SizedBox(width: 8),
             const Text('Winter Chat'),
             if (!store.online) ...[
               const SizedBox(width: 10),
-              const Tooltip(
+              Tooltip(
                 message: 'Нет связи с сервером',
                 child: Icon(Icons.cloud_off, size: 18, color: W.warn),
               ),
@@ -207,7 +206,7 @@ class _ChatList extends StatelessWidget {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Icon(Icons.cloud_off, size: 48, color: W.warn),
+              Icon(Icons.cloud_off, size: 48, color: W.warn),
               const SizedBox(height: 10),
               Text(store.error!, textAlign: TextAlign.center, style: W.body),
               const SizedBox(height: 14),
@@ -226,11 +225,11 @@ class _ChatList extends StatelessWidget {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Icon(Icons.chat_bubble_outline, size: 52, color: W.border),
+              Icon(Icons.chat_bubble_outline, size: 52, color: W.border),
               const SizedBox(height: 12),
-              const Text('Чатов пока нет', style: W.h2),
+              Text('Чатов пока нет', style: W.h2),
               const SizedBox(height: 6),
-              const Text('Начни переписку с другом или создай группу.', style: W.small, textAlign: TextAlign.center),
+              Text('Начни переписку с другом или создай группу.', style: W.small, textAlign: TextAlign.center),
               const SizedBox(height: 16),
               FilledButton.icon(
                 icon: const Icon(Icons.add),
@@ -282,11 +281,15 @@ class _ChatTile extends StatelessWidget {
       }
     }
     if (sub.isEmpty) sub = isGroup ? '${chat.getListValue<String>('members').length} участников' : 'Нет сообщений';
+    final other = isGroup ? null : api.otherMember(chat);
+    final status = other == null ? null : api.statusOf(other);
+    if (!Settings.I.chatPreview) {
+      sub = isGroup ? '${chat.getListValue<String>('members').length} участников' : (status == null ? '' : api.statusText(other!));
+    }
     final at = parseDate(chat.getStringValue('last_at'));
+    final prefs = Settings.I.chatPrefs(chat.id);
 
-    final avatar = isGroup
-        ? LetterAvatar(name: title, seed: chat.id, size: 46, icon: Icons.group)
-        : UserAvatar(api.otherMember(chat) ?? api.myId, size: 46);
+    final avatar = ChatAvatar(chat, size: 46);
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 1),
@@ -311,7 +314,7 @@ class _ChatTile extends StatelessWidget {
                         child: Container(
                           padding: const EdgeInsets.all(3),
                           decoration: BoxDecoration(color: W.good, shape: BoxShape.circle, border: Border.all(color: W.surface, width: 2)),
-                          child: const Icon(Icons.call, size: 11, color: W.bg),
+                          child: Icon(Icons.call, size: 11, color: W.bg),
                         ),
                       ),
                   ],
@@ -323,7 +326,7 @@ class _ChatTile extends StatelessWidget {
                     children: [
                       Row(
                         children: [
-                          Expanded(
+                          Flexible(
                             child: Text(
                               title,
                               maxLines: 1,
@@ -331,6 +334,14 @@ class _ChatTile extends StatelessWidget {
                               style: TextStyle(fontSize: 15.5, fontWeight: unread ? FontWeight.w800 : FontWeight.w600, color: W.text),
                             ),
                           ),
+                          if (status != null && status.emoji.isNotEmpty)
+                            Padding(
+                              padding: const EdgeInsets.only(left: 5),
+                              child: Tooltip(message: api.statusText(other!), child: Text(status.emoji, style: const TextStyle(fontSize: 14))),
+                            ),
+                          const Spacer(),
+                          if (prefs.mute) Padding(padding: const EdgeInsets.only(right: 4), child: Icon(Icons.notifications_off_outlined, size: 14, color: W.muted)),
+                          if (prefs.pin) Padding(padding: const EdgeInsets.only(right: 4), child: Icon(Icons.push_pin, size: 14, color: W.muted)),
                           if (at != null)
                             Text(shortTime(at), style: TextStyle(fontSize: 12, color: unread ? W.ice : W.muted)),
                         ],
@@ -351,7 +362,7 @@ class _ChatTile extends StatelessWidget {
                               width: 10,
                               height: 10,
                               margin: const EdgeInsets.only(left: 6),
-                              decoration: const BoxDecoration(color: W.ice, shape: BoxShape.circle),
+                              decoration: BoxDecoration(color: prefs.mute ? W.muted : W.ice, shape: BoxShape.circle),
                             ),
                         ],
                       ),
@@ -386,21 +397,21 @@ class InCallBar extends StatelessWidget {
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
               child: Row(
                 children: [
-                  const Icon(Icons.call, color: W.good, size: 18),
+                  Icon(Icons.call, color: W.good, size: 18),
                   const SizedBox(width: 10),
                   Expanded(
                     child: Text(
                       call.connecting ? 'Подключение к звонку…' : 'Звонок: ${call.title}',
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(color: W.good, fontWeight: FontWeight.w700),
+                      style: TextStyle(color: W.good, fontWeight: FontWeight.w700),
                     ),
                   ),
-                  const Text('вернуться', style: TextStyle(color: W.good, fontSize: 12.5)),
+                  Text('вернуться', style: TextStyle(color: W.good, fontSize: 12.5)),
                   const SizedBox(width: 8),
                   InkWell(
                     onTap: () => call.leave(),
-                    child: const Padding(
+                    child: Padding(
                       padding: EdgeInsets.all(2),
                       child: Icon(Icons.call_end, color: W.bad, size: 20),
                     ),
@@ -422,13 +433,19 @@ Future<bool?> showIncomingCall(
   required String title,
   String? callerId,
 }) {
-  final ringOn = Settings.I.ringSound && !Settings.I.dnd;
-  final ring = Timer.periodic(const Duration(seconds: 2), (_) {
-    if (ringOn) SystemSound.play(SystemSoundType.alert);
-  });
-  if (ringOn) SystemSound.play(SystemSoundType.alert);
+  final ringOn = Settings.I.ringSound && !Settings.I.dnd && !Settings.I.isMuted(chatId);
+  void Function()? stopRing;
   final callerName = callerId == null ? title : Api.I.nameOf(callerId);
   var closed = false;
+  if (ringOn) {
+    Sounds.ring().then((stop) {
+      if (closed) {
+        stop();
+      } else {
+        stopRing = stop;
+      }
+    });
+  }
   BuildContext? dialogCtx;
   Timer? auto;
 
@@ -479,7 +496,7 @@ Future<bool?> showIncomingCall(
   );
   return future.whenComplete(() {
     closed = true;
-    ring.cancel();
+    stopRing?.call();
     auto?.cancel();
     Store.I.removeListener(onStore);
   });

@@ -5,6 +5,7 @@ import '../api.dart';
 import '../store.dart';
 import '../theme.dart';
 import '../widgets/avatar.dart';
+import 'profile_sheet.dart';
 
 List<RecordModel> _otherUsers({Set<String> exclude = const {}}) {
   final me = Api.I.myId;
@@ -115,19 +116,19 @@ class _NewChatSheetState extends State<_NewChatSheet> {
                 child: TextField(
                   controller: _name,
                   textCapitalization: TextCapitalization.sentences,
-                  decoration: const InputDecoration(labelText: 'Название группы', prefixIcon: Icon(Icons.group, color: W.muted)),
+                  decoration: InputDecoration(labelText: 'Название группы', prefixIcon: Icon(Icons.group, color: W.muted)),
                 ),
               ),
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 6, 16, 6),
               child: TextField(
                 onChanged: (v) => setState(() => _query = v),
-                decoration: const InputDecoration(hintText: 'Поиск', prefixIcon: Icon(Icons.search, color: W.muted), isDense: true),
+                decoration: InputDecoration(hintText: 'Поиск', prefixIcon: Icon(Icons.search, color: W.muted), isDense: true),
               ),
             ),
             Expanded(
               child: users.isEmpty
-                  ? const Center(
+                  ? Center(
                       child: Padding(
                         padding: EdgeInsets.all(24),
                         child: Text(
@@ -152,7 +153,7 @@ class _NewChatSheetState extends State<_NewChatSheet> {
                                   value: sel,
                                   onChanged: (_) => setState(() => sel ? _picked.remove(u.id) : _picked.add(u.id)),
                                 )
-                              : const Icon(Icons.chevron_right, color: W.muted),
+                              : Icon(Icons.chevron_right, color: W.muted),
                           onTap: () {
                             if (_group) {
                               setState(() => sel ? _picked.remove(u.id) : _picked.add(u.id));
@@ -201,7 +202,7 @@ Future<List<String>?> pickPeople(BuildContext context, {required String title, S
               Padding(padding: const EdgeInsets.all(16), child: Text(title, style: W.h2)),
               Expanded(
                 child: users.isEmpty
-                    ? const Center(child: Text('Все уже здесь', style: W.small))
+                    ? Center(child: Text('Все уже здесь', style: W.small))
                     : ListView(
                         children: [
                           for (final u in users)
@@ -253,9 +254,13 @@ Future<void> showMembers(BuildContext context, RecordModel chat) {
                 for (final id in members)
                   ListTile(
                     leading: UserAvatar(id, size: 38),
-                    title: Text(Api.I.nameOf(id) + (id == Api.I.myId ? ' (ты)' : '')),
-                    subtitle: Text('@${Api.I.users[id]?.getStringValue('username') ?? ''}', style: W.small),
-                    trailing: id == owner ? const Text('создатель', style: W.small) : null,
+                    title: Text(Api.I.nameOf(id) + (id == Api.I.myId ? ' (ты)' : ''), style: TextStyle(color: nameColorFor(id))),
+                    subtitle: Text(
+                      Api.I.statusText(id).isNotEmpty ? Api.I.statusText(id) : '@${Api.I.users[id]?.getStringValue('username') ?? ''}',
+                      style: W.small,
+                    ),
+                    trailing: id == owner ? Text('создатель', style: W.small) : null,
+                    onTap: () => showProfile(ctx, id),
                   ),
               ],
             ),

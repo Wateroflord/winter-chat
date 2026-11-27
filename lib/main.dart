@@ -24,27 +24,50 @@ Future<void> _main() async {
 
 final navigatorKey = GlobalKey<NavigatorState>();
 
-class WinterChatApp extends StatelessWidget {
+class WinterChatApp extends StatefulWidget {
   const WinterChatApp({super.key});
 
   @override
+  State<WinterChatApp> createState() => _WinterChatAppState();
+}
+
+class _WinterChatAppState extends State<WinterChatApp> {
+  @override
+  void initState() {
+    super.initState();
+    W.apply(Settings.I.palette, Settings.I.accent);
+    Settings.I.addListener(_changed);
+  }
+
+  @override
+  void dispose() {
+    Settings.I.removeListener(_changed);
+    super.dispose();
+  }
+
+  void _changed() {
+    if (!mounted) return;
+    W.apply(Settings.I.palette, Settings.I.accent);
+    // Тема, пузыри, аватары — всё читается при построении, поэтому перестраиваем всё дерево.
+    rebuildAll(context);
+    setState(() {});
+  }
+
+  @override
   Widget build(BuildContext context) {
-    return ListenableBuilder(
-      listenable: Settings.I,
-      builder: (context, _) => MaterialApp(
-        title: 'Winter Chat',
-        debugShowCheckedModeBanner: false,
-        theme: buildTheme(accent: Settings.I.accent),
-        navigatorKey: navigatorKey,
-        builder: (context, child) {
-          final mq = MediaQuery.of(context);
-          return MediaQuery(
-            data: mq.copyWith(textScaler: TextScaler.linear(Settings.I.textScale)),
-            child: child ?? const SizedBox.shrink(),
-          );
-        },
-        home: const Root(),
-      ),
+    return MaterialApp(
+      title: 'Winter Chat',
+      debugShowCheckedModeBanner: false,
+      theme: buildTheme(),
+      navigatorKey: navigatorKey,
+      builder: (context, child) {
+        final mq = MediaQuery.of(context);
+        return MediaQuery(
+          data: mq.copyWith(textScaler: TextScaler.linear(Settings.I.textScale)),
+          child: child ?? const SizedBox.shrink(),
+        );
+      },
+      home: const Root(),
     );
   }
 }

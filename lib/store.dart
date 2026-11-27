@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:pocketbase/pocketbase.dart';
 
 import 'api.dart';
+import 'settings.dart';
 
 /// Список чатов и активных звонков, обновляется в реальном времени.
 class Store extends ChangeNotifier {
@@ -150,7 +151,18 @@ class Store extends ChangeNotifier {
       return a.isNotEmpty ? a : c.getStringValue('created');
     }
 
-    chats.sort((a, b) => key(b).compareTo(key(a)));
+    // Закреплённые — сверху, внутри групп — по последнему сообщению.
+    chats.sort((a, b) {
+      final pa = Settings.I.isPinned(a.id), pb = Settings.I.isPinned(b.id);
+      if (pa != pb) return pa ? -1 : 1;
+      return key(b).compareTo(key(a));
+    });
+  }
+
+  /// Пересортировать (после закрепления чата).
+  void resort() {
+    _sort();
+    notifyListeners();
   }
 
   RecordModel? chat(String id) {

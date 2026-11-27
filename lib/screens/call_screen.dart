@@ -116,7 +116,7 @@ class _CallScreenState extends State<CallScreen> {
           children: [
             Expanded(
               child: room == null
-                  ? const Center(
+                  ? Center(
                       child: Column(
                         mainAxisSize: MainAxisSize.min,
                         children: [
@@ -145,7 +145,7 @@ class _CallScreenState extends State<CallScreen> {
       return Column(
         children: [
           Expanded(child: Padding(padding: const EdgeInsets.all(8), child: _tile(tiles.first))),
-          const Padding(
+          Padding(
             padding: EdgeInsets.only(bottom: 8),
             child: Text('Ждём остальных… Друзья увидят звонок в этом чате.', style: W.small),
           ),
@@ -298,7 +298,7 @@ class _CtrlButton extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 5),
-        Text(label, style: const TextStyle(fontSize: 11.5, color: W.muted)),
+        Text(label, style: TextStyle(fontSize: 11.5, color: W.muted)),
       ],
     );
   }
@@ -401,9 +401,9 @@ class _ParticipantTileState extends State<ParticipantTile> {
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        if (widget.screen) const Padding(padding: EdgeInsets.only(right: 4), child: Icon(Icons.screen_share, size: 14, color: W.ice)),
+                        if (widget.screen) Padding(padding: EdgeInsets.only(right: 4), child: Icon(Icons.screen_share, size: 14, color: W.ice)),
                         if (!widget.screen && !p.isMicrophoneEnabled())
-                          const Padding(padding: EdgeInsets.only(right: 4), child: Icon(Icons.mic_off, size: 14, color: W.bad)),
+                          Padding(padding: EdgeInsets.only(right: 4), child: Icon(Icons.mic_off, size: 14, color: W.bad)),
                         Flexible(
                           child: Text(
                             widget.screen ? 'Экран: $name' : (isLocal ? '$name (ты)' : name),

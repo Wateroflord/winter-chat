@@ -1,4 +1,7 @@
-/// Даты и файлы.
+/// Даты, файлы и цвета.
+library;
+
+import 'dart:ui' show Color;
 
 DateTime? parseDate(String s) {
   if (s.isEmpty) return null;
@@ -60,3 +63,13 @@ String humanSize(int bytes) {
 
 /// Ссылки в сообщениях: обычные и приглашения Winter VPN (wintervpn://join?key=...).
 final urlRegex = RegExp(r'((?:https?|wintervpn)://[^\s<>"]+)', caseSensitive: false);
+
+/// «#RRGGBB» → цвет (null — пусто или ерунда).
+Color? parseHexColor(String s) {
+  final h = s.trim().replaceFirst('#', '');
+  if (!RegExp(r'^[0-9a-fA-F]{6}$').hasMatch(h)) return null;
+  return Color(0xFF000000 | int.parse(h, radix: 16));
+}
+
+/// Цвет → «#RRGGBB».
+String colorToHex(Color c) => '#${(c.toARGB32() & 0xFFFFFF).toRadixString(16).padLeft(6, '0').toUpperCase()}';

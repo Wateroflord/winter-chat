@@ -1,10 +1,13 @@
 import 'dart:async';
 import 'dart:convert';
 
-import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:pocketbase/pocketbase.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+
+import 'settings.dart';
+import 'util.dart';
 
 /// Связь с сервером Winter Chat (PocketBase на ноутбуке друга).
 class Api extends ChangeNotifier {
@@ -298,8 +301,46 @@ class Api extends ChangeNotifier {
   Uri fileUrl(RecordModel rec, String file, {String? thumb, bool download = false}) =>
       pb.files.getURL(rec, file, thumb: thumb, download: download ? true : null);
 
-  /// Название чата: для личного — имя собеседника.
+  /// Цвет профиля (имя в группах, баннер, аватар без фото). null — не выбран.
+  Color? profileColor(String userId) => parseHexColor(users[userId]?.getStringValue('color') ?? '');
+
+  /// Статус: эмодзи и текст. null — нет или истёк.
+  ({String emoji, String text})? statusOf(String userId) {
+    final u = users[userId];
+    if (u == null) return null;
+    final text = u.getStringValue('status').trim();
+    final emoji = u.getStringValue('status_emoji').trim();
+    if (text.isEmpty && emoji.isEmpty) return null;
+    final until = parseDate(u.getStringValue('status_until'));
+    if (until != null && until.isBefore(DateTime.now())) return null;
+    return (emoji: emoji, text: text);
+  }
+
+  String statusText(String userId) {
+    final s = statusOf(userId);
+    if (s == null) return '';
+    return [s.emoji, s.text].where((e) => e.isNotEmpty).join(' ');
+  }
+
+  String bioOf(String userId) => users[userId]?.getStringValue('bio').trim() ?? '';
+
+  Uri? bannerUrl(String userId) {
+    final u = users[userId];
+    final f = u?.getStringValue('banner') ?? '';
+    if (u == null || f.isEmpty) return null;
+    return pb.files.getURL(u, f, thumb: '960x0');
+  }
+
+  Uri? chatAvatarUrl(RecordModel chat) {
+    final f = chat.getStringValue('avatar');
+    if (f.isEmpty) return null;
+    return pb.files.getURL(chat, f, thumb: '128x128');
+  }
+
+  /// Название чата: своё имя (если задано), для личного — имя собеседника.
   String chatTitle(RecordModel chat) {
+    final alias = Settings.I.alias(chat.id);
+    if (alias.isNotEmpty) return alias;
     if (chat.getBoolValue('is_group')) {
       final n = chat.getStringValue('name').trim();
       return n.isNotEmpty ? n : 'Группа';

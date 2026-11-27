@@ -161,7 +161,7 @@ class _VideoMessageState extends State<VideoMessage> {
                   ),
                   if (_error != null) ...[
                     const SizedBox(height: 8),
-                    Text(_error!, style: const TextStyle(color: W.warn, fontSize: 12.5)),
+                    Text(_error!, style: TextStyle(color: W.warn, fontSize: 12.5)),
                   ],
                 ],
               ),

@@ -96,6 +96,20 @@ n=$(curl -s "$B/api/collections/arc_scores/records" | jq '.items|length')
 [ "$(curl -s -X POST $B/api/wc/panel/arc-restart | jq -r .start)" = "$TODAY" ] || fail "перезапуск Winter Arc"
 ok "Winter Arc: очки, защита, рейтинг"
 
+# --- Профиль и группы: статус, «о себе», цвет, описание группы ---
+P=$(curl -s -X PATCH $B/api/collections/users/records/$U1 -H "Authorization: $T1" -H 'Content-Type: application/json' \
+  -d '{"status":"Играю","status_emoji":"🎮","bio":"Люблю зиму","color":"#FF78AA","status_until":"2099-01-01 00:00:00.000Z"}')
+[ "$(echo "$P" | jq -r .status)" = "Играю" ] && [ "$(echo "$P" | jq -r .color)" = "#FF78AA" ] && [ "$(echo "$P" | jq -r .bio)" = "Люблю зиму" ] || fail "профиль: $P"
+code=$(curl -s -o /dev/null -w '%{http_code}' -X PATCH $B/api/collections/users/records/$U1 -H "Authorization: $T1" -H 'Content-Type: application/json' -d '{"color":"красный"}')
+[ "$code" = "400" ] || fail "кривой цвет профиля принят ($code)"
+code=$(curl -s -o /dev/null -w '%{http_code}' -X PATCH $B/api/collections/users/records/$U1 -H "Authorization: $T2" -H 'Content-Type: application/json' -d '{"status":"взлом"}')
+[ "$code" != "200" ] || fail "чужой профиль можно поменять"
+curl -s $B/api/collections/users/records/$U1 -H "Authorization: $T2" | jq -e '.status=="Играю" and .status_emoji=="🎮"' >/dev/null || fail "друг не видит статус"
+curl -s -X PATCH $B/api/collections/users/records/$U1 -H "Authorization: $T1" -H 'Content-Type: application/json' -d '{"color":"","status":"","status_emoji":"","status_until":""}' | jq -e '.color==""' >/dev/null || fail "очистить профиль"
+GRP=$(curl -s -X POST $B/api/collections/chats/records -H "Authorization: $T1" -H 'Content-Type: application/json' -d "{\"name\":\"Профиль-тест\",\"is_group\":true,\"members\":[\"$U2\"]}" | jq -r .id)
+curl -s -X PATCH $B/api/collections/chats/records/$GRP -H "Authorization: $T2" -H 'Content-Type: application/json' -d '{"description":"Играем по пятницам"}' | jq -e '.description=="Играем по пятницам"' >/dev/null || fail "описание группы"
+ok "профиль (статус, о себе, цвет) и описание группы"
+
 # --- Игры с друзьями: шахматы и гонка в сапёр ---
 curl -s $B/api/wc/info | jq -e '.games.kinds|index("chess")' >/dev/null || fail "сервер не сообщает об играх"
 J='Content-Type: application/json'

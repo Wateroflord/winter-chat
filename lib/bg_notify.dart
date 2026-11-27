@@ -61,14 +61,15 @@ class BgNotify {
           'sort': '-created',
           'perPage': '20',
           'expand': 'author,chat',
-          'fields': 'id,created,text,files,expand.author.name,expand.author.username,expand.chat.name,expand.chat.is_group',
+          'fields': 'id,chat,created,text,files,expand.author.name,expand.author.username,expand.chat.name,expand.chat.is_group',
         },
       );
 
   /// Текст уведомлений из ответа сервера (проверяется тестами).
-  static List<({String title, String body})> format(Map res) {
+  static List<({String title, String body})> format(Map res, {Set<String> muted = const {}}) {
     final out = <({String title, String body})>[];
     for (final m in (res['items'] as List? ?? const []).whereType<Map>()) {
+      if (muted.contains('${m['chat'] ?? ''}')) continue; // чат «без звука»
       final ex = (m['expand'] as Map?) ?? const {};
       final a = (ex['author'] as Map?) ?? const {};
       final c = (ex['chat'] as Map?) ?? const {};
@@ -104,8 +105,9 @@ class BgNotify {
     final items = (res['items'] as List? ?? const []).whereType<Map>().toList();
     if (items.isEmpty) return;
     await p.setString(kLastNotified, '${items.first['created']}');
+    final list = format(res, muted: (p.getStringList(Settings.kMutedChats) ?? const []).toSet());
+    if (list.isEmpty) return;
     await _initPlugin();
-    final list = format(res);
     final details = NotificationDetails(
       android: withSound
           ? const AndroidNotificationDetails('messages', 'Сообщения', importance: Importance.high, priority: Priority.high)

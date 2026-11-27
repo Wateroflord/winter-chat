@@ -21,6 +21,7 @@ import '../widgets/chat_background.dart';
 import '../widgets/video_message.dart';
 import 'home_screen.dart';
 import 'people_sheet.dart';
+import 'profile_sheet.dart';
 
 class ChatScreen extends StatefulWidget {
   const ChatScreen({super.key, required this.chatId, this.embedded = false});
@@ -263,7 +264,7 @@ class _ChatScreenState extends State<ChatScreen> {
         content: const Text('Оно пропадёт у всех.'),
         actions: [
           TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Отмена')),
-          TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Удалить', style: TextStyle(color: W.bad))),
+          TextButton(onPressed: () => Navigator.pop(ctx, true), child: Text('Удалить', style: TextStyle(color: W.bad))),
         ],
       ),
     );
@@ -344,6 +345,10 @@ class _ChatScreenState extends State<ChatScreen> {
     final members = chat.getListValue<String>('members');
     try {
       switch (action) {
+        case 'style':
+          await showChatStyle(context, chat);
+        case 'group':
+          await editGroup(context, chat);
         case 'members':
           await showMembers(context, chat);
         case 'add':
@@ -378,7 +383,7 @@ class _ChatScreenState extends State<ChatScreen> {
     if (chat == null) {
       return Scaffold(
         appBar: AppBar(automaticallyImplyLeading: !widget.embedded),
-        body: Center(child: Store.I.loaded ? const Text('Чат не найден', style: W.small) : const CircularProgressIndicator()),
+        body: Center(child: Store.I.loaded ? Text('Чат не найден', style: W.small) : const CircularProgressIndicator()),
       );
     }
     final api = Api.I;
@@ -394,12 +399,10 @@ class _ChatScreenState extends State<ChatScreen> {
         automaticallyImplyLeading: !widget.embedded,
         titleSpacing: widget.embedded ? 16 : 0,
         title: InkWell(
-          onTap: isGroup ? () => showMembers(context, chat) : null,
+          onTap: isGroup ? () => showMembers(context, chat) : () => showProfile(context, api.otherMember(chat) ?? api.myId),
           child: Row(
             children: [
-              isGroup
-                  ? LetterAvatar(name: title, seed: chat.id, size: 36, icon: Icons.group)
-                  : UserAvatar(api.otherMember(chat) ?? api.myId, size: 36),
+              ChatAvatar(chat, size: 36),
               const SizedBox(width: 10),
               Expanded(
                 child: Column(
@@ -407,7 +410,22 @@ class _ChatScreenState extends State<ChatScreen> {
                   children: [
                     Text(title, maxLines: 1, overflow: TextOverflow.ellipsis),
                     if (isGroup)
-                      Text('${members.length} участников', style: const TextStyle(fontSize: 12, color: W.muted, fontWeight: FontWeight.w400)),
+                      Text(
+                        [
+                          '${members.length} участников',
+                          if (chat.getStringValue('description').trim().isNotEmpty) chat.getStringValue('description').trim(),
+                        ].join(' · '),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(fontSize: 12, color: W.muted, fontWeight: FontWeight.w400),
+                      )
+                    else if (api.statusText(api.otherMember(chat) ?? '').isNotEmpty)
+                      Text(
+                        api.statusText(api.otherMember(chat)!),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(fontSize: 12, color: W.muted, fontWeight: FontWeight.w400),
+                      ),
                   ],
                 ),
               ),
@@ -428,11 +446,13 @@ class _ChatScreenState extends State<ChatScreen> {
           PopupMenuButton<String>(
             onSelected: _chatMenu,
             itemBuilder: (_) => [
+              const PopupMenuItem(value: 'style', child: Text('Оформление и настройки чата')),
+              if (isGroup) const PopupMenuItem(value: 'group', child: Text('Фото и описание группы')),
               if (isGroup) const PopupMenuItem(value: 'members', child: Text('Участники')),
               if (isGroup) const PopupMenuItem(value: 'add', child: Text('Добавить участников')),
               if (isGroup) const PopupMenuItem(value: 'rename', child: Text('Переименовать')),
               if (isGroup) const PopupMenuItem(value: 'leave', child: Text('Выйти из группы')),
-              if (isOwner) const PopupMenuItem(value: 'delete', child: Text('Удалить чат', style: TextStyle(color: W.bad))),
+              if (isOwner) PopupMenuItem(value: 'delete', child: Text('Удалить чат', style: TextStyle(color: W.bad))),
             ],
           ),
         ],
@@ -441,7 +461,7 @@ class _ChatScreenState extends State<ChatScreen> {
         children: [
           if (!widget.embedded) const InCallBar(),
           if (inCall.isNotEmpty && !iAmInCall) _callBanner(chat, title, inCall),
-          Expanded(child: ChatBackground(style: Settings.I.chatBackground, child: _messagesView(isGroup))),
+          Expanded(child: ChatBackground(wallpaper: Settings.I.wallpaperFor(chat.id), child: _messagesView(isGroup))),
           _composer(),
         ],
       ),
@@ -456,10 +476,10 @@ class _ChatScreenState extends State<ChatScreen> {
         padding: const EdgeInsets.fromLTRB(14, 8, 8, 8),
         child: Row(
           children: [
-            const Icon(Icons.call, color: W.good, size: 18),
+            Icon(Icons.call, color: W.good, size: 18),
             const SizedBox(width: 10),
             Expanded(
-              child: Text('Идёт звонок: $names', maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(color: W.good)),
+              child: Text('Идёт звонок: $names', maxLines: 2, overflow: TextOverflow.ellipsis, style: TextStyle(color: W.good)),
             ),
             FilledButton(
               style: FilledButton.styleFrom(backgroundColor: W.good, padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8)),
@@ -490,7 +510,7 @@ class _ChatScreenState extends State<ChatScreen> {
       );
     }
     if (_msgs.isEmpty) {
-      return const Center(child: Text('Напиши первое сообщение 👋', style: W.small));
+      return Center(child: Text('Напиши первое сообщение 👋', style: W.small));
     }
     return ListView.builder(
       controller: _scroll,
@@ -522,6 +542,8 @@ class _ChatScreenState extends State<ChatScreen> {
               showAuthor: isGroup && !grouped,
               compact: grouped,
               onMenu: (at) => _messageMenu(m, at),
+              chatId: widget.chatId,
+              isGroup: isGroup,
             ),
           ],
         );
@@ -532,7 +554,7 @@ class _ChatScreenState extends State<ChatScreen> {
   Widget _composer() {
     final canSend = _text.text.trim().isNotEmpty || _pending.isNotEmpty;
     return Container(
-      decoration: const BoxDecoration(
+      decoration: BoxDecoration(
         color: W.surface,
         border: Border(top: BorderSide(color: W.border)),
       ),
@@ -548,9 +570,9 @@ class _ChatScreenState extends State<ChatScreen> {
                   padding: const EdgeInsets.only(bottom: 6, left: 6),
                   child: Row(
                     children: [
-                      const Icon(Icons.edit, size: 16, color: W.ice),
+                      Icon(Icons.edit, size: 16, color: W.ice),
                       const SizedBox(width: 8),
-                      const Expanded(child: Text('Изменение сообщения', style: TextStyle(color: W.ice, fontSize: 13))),
+                      Expanded(child: Text('Изменение сообщения', style: TextStyle(color: W.ice, fontSize: 13))),
                       IconButton(
                         visualDensity: VisualDensity.compact,
                         icon: const Icon(Icons.close, size: 18),
@@ -576,7 +598,7 @@ class _ChatScreenState extends State<ChatScreen> {
                             label: Text('${f.name} · ${humanSize(f.size)}', style: const TextStyle(fontSize: 12.5)),
                             onDeleted: _sending ? null : () => setState(() => _pending.remove(f)),
                             backgroundColor: W.surface2,
-                            side: const BorderSide(color: W.border),
+                            side: BorderSide(color: W.border),
                           ),
                         ),
                     ],
@@ -588,7 +610,7 @@ class _ChatScreenState extends State<ChatScreen> {
                   if (_editing == null)
                     PopupMenuButton<FileType>(
                       tooltip: 'Прикрепить',
-                      icon: const Icon(Icons.attach_file, color: W.muted),
+                      icon: Icon(Icons.attach_file, color: W.muted),
                       enabled: !_sending,
                       onSelected: (t) => _pickFiles(type: t),
                       itemBuilder: (_) => const [
@@ -601,10 +623,13 @@ class _ChatScreenState extends State<ChatScreen> {
                       onKeyEvent: (node, event) {
                         if (_desktop &&
                             event is KeyDownEvent &&
-                            (event.logicalKey == LogicalKeyboardKey.enter || event.logicalKey == LogicalKeyboardKey.numpadEnter) &&
-                            !HardwareKeyboard.instance.isShiftPressed) {
-                          _send();
-                          return KeyEventResult.handled;
+                            (event.logicalKey == LogicalKeyboardKey.enter || event.logicalKey == LogicalKeyboardKey.numpadEnter)) {
+                          final kb = HardwareKeyboard.instance;
+                          final send = Settings.I.enterSends ? !kb.isShiftPressed : kb.isControlPressed;
+                          if (send) {
+                            _send();
+                            return KeyEventResult.handled;
+                          }
                         }
                         return KeyEventResult.ignored;
                       },
@@ -618,12 +643,14 @@ class _ChatScreenState extends State<ChatScreen> {
                         keyboardType: TextInputType.multiline,
                         onChanged: (_) => setState(() {}),
                         decoration: InputDecoration(
-                          hintText: _desktop ? 'Сообщение (Enter — отправить, Shift+Enter — новая строка)' : 'Сообщение',
+                          hintText: _desktop
+                              ? (Settings.I.enterSends ? 'Сообщение (Enter — отправить, Shift+Enter — новая строка)' : 'Сообщение (Ctrl+Enter — отправить)')
+                              : 'Сообщение',
                           isDense: true,
                           contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
-                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(22), borderSide: const BorderSide(color: W.border)),
-                          enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(22), borderSide: const BorderSide(color: W.border)),
-                          focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(22), borderSide: const BorderSide(color: W.ice)),
+                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(22), borderSide: BorderSide(color: W.border)),
+                          enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(22), borderSide: BorderSide(color: W.border)),
+                          focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(22), borderSide: BorderSide(color: W.ice)),
                         ),
                       ),
                     ),
@@ -635,7 +662,7 @@ class _ChatScreenState extends State<ChatScreen> {
                           child: SizedBox(width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2.4)),
                         )
                       : IconButton.filled(
-                          style: IconButton.styleFrom(backgroundColor: canSend ? W.ice : W.surface2, foregroundColor: canSend ? W.bg : W.muted),
+                          style: IconButton.styleFrom(backgroundColor: canSend ? W.ice : W.surface2, foregroundColor: canSend ? W.onAccent : W.muted),
                           icon: Icon(_editing != null ? Icons.check : Icons.send_rounded),
                           onPressed: canSend || _editing != null ? _send : null,
                         ),
@@ -667,7 +694,7 @@ class _DayChip extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
         decoration: BoxDecoration(color: W.surface2, borderRadius: BorderRadius.circular(20)),
-        child: Text(text, style: const TextStyle(fontSize: 12, color: W.muted, fontWeight: FontWeight.w600)),
+        child: Text(text, style: TextStyle(fontSize: 12, color: W.muted, fontWeight: FontWeight.w600)),
       ),
     );
   }
@@ -680,11 +707,15 @@ class MessageBubble extends StatelessWidget {
     required this.showAuthor,
     required this.compact,
     required this.onMenu,
+    this.chatId,
+    this.isGroup = false,
   });
   final RecordModel message;
   final bool showAuthor;
   final bool compact;
   final void Function(Offset? at) onMenu;
+  final String? chatId;
+  final bool isGroup;
 
   @override
   Widget build(BuildContext context) {
@@ -699,27 +730,65 @@ class MessageBubble extends StatelessWidget {
     final settings = Settings.I;
     final d = parseDate(message.getStringValue('created'));
     final edited = message.getBoolValue('edited');
-    final maxW = (MediaQuery.sizeOf(context).width * 0.72).clamp(200.0, 560.0).toDouble();
+    final style = settings.bubbleStyle;
+    final list = style == 3;
+    final maxW = list
+        ? (MediaQuery.sizeOf(context).width - 70).clamp(200.0, 760.0).toDouble()
+        : (MediaQuery.sizeOf(context).width * 0.72).clamp(200.0, 560.0).toDouble();
+    final time = '${edited ? 'изменено · ' : ''}${d == null ? '' : hhmm(d)}';
 
-    final bubble = Container(
-      constraints: BoxConstraints(maxWidth: maxW),
-      padding: settings.compact ? const EdgeInsets.fromLTRB(9, 5, 9, 4) : const EdgeInsets.fromLTRB(10, 7, 10, 6),
-      decoration: BoxDecoration(
-        color: mine ? settings.myBubble : W.surface2,
-        borderRadius: BorderRadius.only(
-          topLeft: const Radius.circular(16),
-          topRight: const Radius.circular(16),
-          bottomLeft: Radius.circular(mine ? 16 : 5),
-          bottomRight: Radius.circular(mine ? 5 : 16),
-        ),
-      ),
+    // Цвета пузыря и текста.
+    final bg = list ? Colors.transparent : (mine ? settings.myBubbleFor(chatId) : settings.otherBubble);
+    final fg = list ? W.text : onColor(bg);
+    final sub = list ? W.muted : fg.withValues(alpha: 0.62);
+    final gradient = !list && mine && settings.myBubbleGradient
+        ? LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: [Color.lerp(bg, Colors.white, 0.12)!, Color.lerp(bg, Colors.black, 0.18)!])
+        : null;
+
+    final r = switch (style) {
+      2 => 4.0,
+      _ => settings.bubbleRadius,
+    };
+    final tail = style == 0 ? (r * 0.3).clamp(3.0, 6.0) : r;
+    final radius = BorderRadius.only(
+      topLeft: Radius.circular(r),
+      topRight: Radius.circular(r),
+      bottomLeft: Radius.circular(mine ? r : tail),
+      bottomRight: Radius.circular(mine ? tail : r),
+    );
+
+    final content = DefaultTextStyle.merge(
+      style: TextStyle(color: fg),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          if (showAuthor && !mine)
+          if (list && !compact)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 2),
+              child: Row(
+                children: [
+                  Flexible(
+                    child: GestureDetector(
+                      onTap: () => showProfile(context, author),
+                      child: Text(
+                        api.nameOf(author),
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(fontSize: 14.5, fontWeight: FontWeight.w700, color: nameColorFor(author)),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Text(time, style: TextStyle(fontSize: 11.5, color: W.muted)),
+                ],
+              ),
+            ),
+          if (!list && showAuthor && !mine)
             Padding(
               padding: const EdgeInsets.only(bottom: 3),
-              child: Text(api.nameOf(author), style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: colorFor(author))),
+              child: GestureDetector(
+                onTap: () => showProfile(context, author),
+                child: Text(api.nameOf(author), style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: nameColorFor(author))),
+              ),
             ),
           if (images.isNotEmpty)
             Padding(
@@ -732,34 +801,56 @@ class MessageBubble extends StatelessWidget {
                     _ImageThumb(
                       message: message,
                       file: f,
-                      size: images.length == 1 ? maxW - 20 : (maxW - 24) / 2,
+                      size: (images.length == 1 ? maxW - 20 : (maxW - 24) / 2).clamp(80.0, list ? 360.0 : 560.0).toDouble(),
                     ),
                 ],
               ),
             ),
-          for (final f in videos) VideoMessage(key: ValueKey('${message.id}/$f'), message: message, file: f, width: maxW - 20),
+          for (final f in videos) VideoMessage(key: ValueKey('${message.id}/$f'), message: message, file: f, width: (maxW - 20).clamp(160.0, 480.0).toDouble()),
           for (final f in others) _FileTile(message: message, file: f),
-          if (text.isNotEmpty) _LinkText(text),
-          Align(
-            alignment: Alignment.bottomRight,
-            child: Text(
-              '${edited ? 'изменено · ' : ''}${d == null ? '' : hhmm(d)}',
-              style: TextStyle(fontSize: 11, color: mine ? W.iceLight.withValues(alpha: 0.7) : W.muted),
+          if (text.isNotEmpty) _LinkText(text, color: fg),
+          if (!list)
+            Align(
+              alignment: Alignment.bottomRight,
+              child: Text(time, style: TextStyle(fontSize: 11, color: sub)),
             ),
-          ),
         ],
       ),
     );
 
+    final bubble = list
+        ? Container(constraints: BoxConstraints(maxWidth: maxW), padding: const EdgeInsets.symmetric(vertical: 1), child: content)
+        : Container(
+            constraints: BoxConstraints(maxWidth: maxW),
+            padding: settings.compact ? const EdgeInsets.fromLTRB(9, 5, 9, 4) : const EdgeInsets.fromLTRB(10, 7, 10, 6),
+            decoration: BoxDecoration(
+              color: gradient == null ? bg : null,
+              gradient: gradient,
+              borderRadius: radius,
+              border: W.light && !mine && settings.otherBubbleColor == null ? Border.all(color: W.border) : null,
+            ),
+            child: content,
+          );
+
+    // Аватар: в группах (если включено) и всегда в виде «список».
+    final avatarSlot = list || (isGroup && settings.showAvatars);
+    final avatarSize = list ? 38.0 : 32.0;
+    final avatar = SizedBox(
+      width: avatarSize,
+      child: compact
+          ? null
+          : GestureDetector(onTap: () => showProfile(context, author), child: UserAvatar(author, size: avatarSize)),
+    );
+
     return Padding(
-      padding: EdgeInsets.only(top: compact ? 2 : (settings.compact ? 5 : 8)),
+      padding: EdgeInsets.only(top: compact ? (list ? 0 : 2) : (settings.compact ? 5 : (list ? 10 : 8))),
       child: Row(
-        mainAxisAlignment: mine ? MainAxisAlignment.end : MainAxisAlignment.start,
-        crossAxisAlignment: CrossAxisAlignment.end,
+        mainAxisAlignment: mine && !list ? MainAxisAlignment.end : MainAxisAlignment.start,
+        crossAxisAlignment: list ? CrossAxisAlignment.start : CrossAxisAlignment.end,
         children: [
-          if (!mine) ...[
-            SizedBox(width: 32, child: compact ? null : UserAvatar(author, size: 32)),
-            const SizedBox(width: 6),
+          if ((!mine || list) && avatarSlot) ...[
+            avatar,
+            SizedBox(width: list ? 10 : 6),
           ],
           Flexible(
             child: GestureDetector(
@@ -775,8 +866,9 @@ class MessageBubble extends StatelessWidget {
 }
 
 class _LinkText extends StatelessWidget {
-  const _LinkText(this.text);
+  const _LinkText(this.text, {this.color});
   final String text;
+  final Color? color;
 
   @override
   Widget build(BuildContext context) {
@@ -787,16 +879,16 @@ class _LinkText extends StatelessWidget {
       final url = m.group(0)!;
       spans.add(TextSpan(
         text: url,
-        style: const TextStyle(color: W.ice, decoration: TextDecoration.underline, decorationColor: W.ice),
+        style: TextStyle(color: color == null || color == W.text ? W.ice : color, decoration: TextDecoration.underline, decorationColor: color ?? W.ice),
         recognizer: TapGestureRecognizer()..onTap = () => openUrl(context, Uri.parse(url)),
       ));
       last = m.end;
     }
     if (last < text.length) spans.add(TextSpan(text: text.substring(last)));
-    final big = text.runes.length <= 3 && !RegExp(r'[a-zA-Zа-яА-Я0-9]').hasMatch(text);
+    final big = Settings.I.bigEmoji && text.runes.length <= 3 && !RegExp(r'[a-zA-Zа-яА-Я0-9]').hasMatch(text);
     return Text.rich(
       TextSpan(children: spans),
-      style: big ? const TextStyle(fontSize: 34) : W.body,
+      style: big ? const TextStyle(fontSize: 34) : W.body.copyWith(color: color),
     );
   }
 }
@@ -829,7 +921,7 @@ class _ImageThumbState extends State<_ImageThumb> {
           width: size,
           height: size * 0.6,
           decoration: BoxDecoration(color: W.surface3, borderRadius: BorderRadius.circular(12)),
-          child: const Column(
+          child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               Icon(Icons.image_outlined, color: W.muted, size: 32),
@@ -859,7 +951,7 @@ class _ImageThumbState extends State<_ImageThumb> {
               width: size,
               height: 90,
               color: W.surface3,
-              child: const Icon(Icons.broken_image_outlined, color: W.muted),
+              child: Icon(Icons.broken_image_outlined, color: W.muted),
             ),
           ),
         ),
@@ -907,7 +999,7 @@ class _FileTile extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(name, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w600, color: W.text)),
+                    Text(name, maxLines: 2, overflow: TextOverflow.ellipsis, style: TextStyle(fontWeight: FontWeight.w600, color: W.text)),
                     Text(hint, style: W.small),
                   ],
                 ),

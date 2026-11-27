@@ -38,6 +38,14 @@ func ensureSchema(app core.App) error {
 	if f, ok := users.Fields.GetByName("email").(*core.EmailField); ok {
 		f.Required = false
 	}
+	// Профиль: статус, «о себе», цвет, баннер (Настройки → Профиль).
+	images := []string{"image/jpeg", "image/png", "image/webp", "image/gif"}
+	addField(users, &core.TextField{Name: "status", Max: 80})
+	addField(users, &core.TextField{Name: "status_emoji", Max: 16})
+	addField(users, &core.DateField{Name: "status_until"})
+	addField(users, &core.TextField{Name: "bio", Max: 300})
+	addField(users, &core.TextField{Name: "color", Max: 7, Pattern: `^#[0-9A-Fa-f]{6}$`})
+	addField(users, &core.FileField{Name: "banner", MaxSelect: 1, MaxSize: 8 << 20, MimeTypes: images, Thumbs: []string{"960x0"}})
 	users.PasswordAuth.Enabled = true
 	users.PasswordAuth.IdentityFields = []string{"username"}
 	users.ListRule = types.Pointer(rulesAuthed)
@@ -65,6 +73,9 @@ func ensureSchema(app core.App) error {
 		chats.Fields.Add(&core.AutodateField{Name: "created", OnCreate: true})
 		chats.Fields.Add(&core.AutodateField{Name: "updated", OnCreate: true, OnUpdate: true})
 	}
+	// Фото и описание группы.
+	addField(chats, &core.FileField{Name: "avatar", MaxSelect: 1, MaxSize: 8 << 20, MimeTypes: images, Thumbs: []string{"128x128"}})
+	addField(chats, &core.TextField{Name: "description", Max: 200})
 	chats.ListRule = types.Pointer(ruleChatMember)
 	chats.ViewRule = types.Pointer(ruleChatMember)
 	chats.CreateRule = types.Pointer(rulesAuthed)
@@ -292,4 +303,11 @@ func contains(list []string, v string) bool {
 		}
 	}
 	return false
+}
+
+// addField добавляет поле, если его ещё нет (обновление сервера без потери данных).
+func addField(c *core.Collection, f core.Field) {
+	if c.Fields.GetByName(f.GetName()) == nil {
+		c.Fields.Add(f)
+	}
 }

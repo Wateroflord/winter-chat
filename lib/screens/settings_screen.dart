@@ -18,6 +18,8 @@ import '../util.dart';
 import '../vpn.dart';
 import '../widgets/avatar.dart';
 import '../widgets/chat_background.dart';
+import 'appearance_screen.dart';
+import 'profile_sheet.dart';
 
 Future<void> openSettings(BuildContext context) =>
     Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => const SettingsScreen()));
@@ -119,7 +121,7 @@ class _Section extends StatelessWidget {
   static List<Widget> _divided(List<Widget> items) {
     final out = <Widget>[];
     for (var i = 0; i < items.length; i++) {
-      if (i > 0) out.add(const Divider(height: 1, thickness: 1, color: W.border, indent: 16, endIndent: 16));
+      if (i > 0) out.add(Divider(height: 1, thickness: 1, color: W.border, indent: 16, endIndent: 16));
       out.add(items[i]);
     }
     return out;
@@ -217,7 +219,7 @@ class _AccountSectionState extends State<_AccountSection> {
         content: const Text('Чтобы вернуться, понадобятся логин и пароль.'),
         actions: [
           TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Отмена')),
-          TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Выйти', style: TextStyle(color: W.bad))),
+          TextButton(onPressed: () => Navigator.pop(ctx, true), child: Text('Выйти', style: TextStyle(color: W.bad))),
         ],
       ),
     );
@@ -252,7 +254,7 @@ class _AccountSectionState extends State<_AccountSection> {
                       child: InkWell(
                         customBorder: const CircleBorder(),
                         onTap: _busy ? null : _pickAvatar,
-                        child: const Padding(padding: EdgeInsets.all(6), child: Icon(Icons.photo_camera, size: 16, color: W.bg)),
+                        child: Padding(padding: EdgeInsets.all(6), child: Icon(Icons.photo_camera, size: 16, color: W.bg)),
                       ),
                     ),
                   ),
@@ -296,14 +298,21 @@ class _AccountSectionState extends State<_AccountSection> {
           ),
         ),
         ListTile(
-          leading: const Icon(Icons.password, color: W.muted),
-          title: const Text('Сменить пароль', style: W.body),
-          trailing: const Icon(Icons.chevron_right, color: W.muted),
+          leading: Icon(Icons.badge_outlined, color: W.muted),
+          title: Text('Профиль: статус, о себе, цвет, баннер', style: W.body),
+          subtitle: Text(Api.I.statusText(Api.I.myId).isEmpty ? 'Это видят друзья' : Api.I.statusText(Api.I.myId), style: W.small),
+          trailing: Icon(Icons.chevron_right, color: W.muted),
+          onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const ProfileEditScreen())),
+        ),
+        ListTile(
+          leading: Icon(Icons.password, color: W.muted),
+          title: Text('Сменить пароль', style: W.body),
+          trailing: Icon(Icons.chevron_right, color: W.muted),
           onTap: _busy ? null : _changePassword,
         ),
         ListTile(
-          leading: const Icon(Icons.logout, color: W.bad),
-          title: const Text('Выйти из аккаунта', style: TextStyle(color: W.bad)),
+          leading: Icon(Icons.logout, color: W.bad),
+          title: Text('Выйти из аккаунта', style: TextStyle(color: W.bad)),
           onTap: _busy ? null : _logout,
         ),
       ],
@@ -393,7 +402,7 @@ class _PasswordDialogState extends State<_PasswordDialog> {
             ),
             if (_error != null) ...[
               const SizedBox(height: 10),
-              Text(_error!, style: const TextStyle(color: W.bad)),
+              Text(_error!, style: TextStyle(color: W.bad)),
             ],
           ],
         ),
@@ -403,7 +412,7 @@ class _PasswordDialogState extends State<_PasswordDialog> {
         FilledButton(
           onPressed: _busy ? null : _submit,
           child: _busy
-              ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2.2, color: W.bg))
+              ? SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2.2, color: W.bg))
               : const Text('Сменить'),
         ),
       ],
@@ -442,7 +451,7 @@ class _NotifySection extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Padding(
+            Padding(
               padding: EdgeInsets.fromLTRB(20, 18, 20, 6),
               child: Text('Не беспокоить: без уведомлений и звуков', style: W.h2),
             ),
@@ -469,9 +478,9 @@ class _NotifySection extends StatelessWidget {
       children: [
         ListTile(
           leading: Icon(s.dnd ? Icons.bedtime : Icons.bedtime_outlined, color: s.dnd ? W.warn : W.muted),
-          title: const Text('Не беспокоить', style: W.body),
+          title: Text('Не беспокоить', style: W.body),
           subtitle: Text(_dndText(s), style: W.small),
-          trailing: const Icon(Icons.chevron_right, color: W.muted),
+          trailing: Icon(Icons.chevron_right, color: W.muted),
           onTap: () => _pickDnd(context),
         ),
         if (_android) ...[
@@ -518,153 +527,46 @@ class _AppearanceSection extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final s = Settings.I;
-    final scales = Settings.textScales;
-    var idx = scales.indexWhere((v) => (v - s.textScale).abs() < 0.01);
-    if (idx < 0) idx = 1;
+    final wp = s.wallpaper;
+    final wpName = switch (wp.kind) {
+      1 => Wallpaper.presets[(wp.preset - 1).clamp(0, Wallpaper.presets.length - 1)],
+      2 => 'свой градиент',
+      3 => 'своё фото',
+      _ => 'без фона',
+    };
     return _Section(
       icon: Icons.palette_outlined,
       title: 'ВНЕШНИЙ ВИД',
       children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 14, 16, 4),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  const Icon(Icons.format_size, color: W.muted),
-                  const SizedBox(width: 16),
-                  const Expanded(child: Text('Размер текста', style: W.body)),
-                  Text('${(scales[idx] * 100).round()}%', style: W.small),
-                ],
-              ),
-              Slider(
-                value: idx.toDouble(),
-                min: 0,
-                max: (scales.length - 1).toDouble(),
-                divisions: scales.length - 1,
-                onChanged: (v) => s.textScale = scales[v.round()],
-              ),
-            ],
+        ListTile(
+          leading: Icon(Icons.brush_outlined, color: W.ice),
+          title: Text('Оформление', style: W.body),
+          subtitle: Text(
+            'Тема «${s.palette.name}» · ${Settings.bubbleStyles[s.bubbleStyle].toLowerCase()} · фон: $wpName',
+            style: W.small,
           ),
+          trailing: Icon(Icons.chevron_right, color: W.muted),
+          onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const AppearanceScreen())),
         ),
         Padding(
-          padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+          padding: const EdgeInsets.fromLTRB(16, 4, 16, 14),
+          child: Wrap(
+            spacing: 8,
+            runSpacing: 8,
             children: [
-              const Row(
-                children: [
-                  Icon(Icons.color_lens_outlined, color: W.muted),
-                  SizedBox(width: 16),
-                  Text('Цвет акцента', style: W.body),
-                ],
-              ),
-              const SizedBox(height: 12),
-              Wrap(
-                spacing: 12,
-                runSpacing: 10,
-                children: [
-                  for (var i = 0; i < Settings.accents.length; i++)
-                    Tooltip(
-                      message: Settings.accents[i].$1,
-                      child: InkWell(
-                        customBorder: const CircleBorder(),
-                        onTap: () => s.accentIndex = i,
-                        child: Container(
-                          width: 38,
-                          height: 38,
-                          decoration: BoxDecoration(
-                            color: Settings.accents[i].$2,
-                            shape: BoxShape.circle,
-                            border: Border.all(color: s.accentIndex == i ? W.text : Colors.transparent, width: 3),
-                          ),
-                          child: s.accentIndex == i ? const Icon(Icons.check, color: W.bg, size: 20) : null,
-                        ),
-                      ),
-                    ),
-                ],
-              ),
-            ],
-          ),
-        ),
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Row(
-                children: [
-                  Icon(Icons.wallpaper_outlined, color: W.muted),
-                  SizedBox(width: 16),
-                  Text('Фон чата', style: W.body),
-                ],
-              ),
-              const SizedBox(height: 12),
-              SizedBox(
-                height: 104,
-                child: ListView.separated(
-                  scrollDirection: Axis.horizontal,
-                  itemCount: Settings.backgrounds.length,
-                  separatorBuilder: (_, __) => const SizedBox(width: 10),
-                  itemBuilder: (_, i) {
-                    final selected = s.chatBackground == i;
-                    return InkWell(
-                      borderRadius: BorderRadius.circular(12),
-                      onTap: () => s.chatBackground = i,
-                      child: Column(
-                        children: [
-                          Container(
-                            width: 72,
-                            height: 76,
-                            decoration: BoxDecoration(
-                              borderRadius: BorderRadius.circular(12),
-                              border: Border.all(
-                                color: selected ? Theme.of(context).colorScheme.primary : W.border,
-                                width: selected ? 2.5 : 1,
-                              ),
-                            ),
-                            clipBehavior: Clip.antiAlias,
-                            child: Stack(
-                              fit: StackFit.expand,
-                              children: [
-                                i == 0 ? const ColoredBox(color: W.bg) : ChatBackgroundPreview(style: i),
-                                Align(
-                                  alignment: const Alignment(0.6, 0.5),
-                                  child: Container(
-                                    width: 30,
-                                    height: 12,
-                                    decoration: BoxDecoration(color: s.myBubble, borderRadius: BorderRadius.circular(6)),
-                                  ),
-                                ),
-                                Align(
-                                  alignment: const Alignment(-0.6, -0.2),
-                                  child: Container(
-                                    width: 34,
-                                    height: 12,
-                                    decoration: BoxDecoration(color: W.surface2, borderRadius: BorderRadius.circular(6)),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                          const SizedBox(height: 5),
-                          Text(Settings.backgrounds[i], style: const TextStyle(fontSize: 11, color: W.muted)),
-                        ],
-                      ),
-                    );
-                  },
+              for (final p in palettes)
+                ChoiceChip(
+                  label: Text(p.name),
+                  selected: s.palette.id == p.id,
+                  onSelected: (_) => s.palette = p,
+                  avatar: Container(
+                    width: 14,
+                    height: 14,
+                    decoration: BoxDecoration(color: p.bg, shape: BoxShape.circle, border: Border.all(color: p.border)),
+                  ),
                 ),
-              ),
             ],
           ),
-        ),
-        _Switch(
-          icon: Icons.density_small,
-          title: 'Компактные сообщения',
-          subtitle: 'Меньше отступов — больше сообщений на экране',
-          value: s.compact,
-          onChanged: (v) => s.compact = v,
         ),
       ],
     );
@@ -813,9 +715,9 @@ class _CallsSectionState extends State<_CallsSection> {
           padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
           child: Row(
             children: [
-              const Icon(Icons.hd_outlined, color: W.muted),
+              Icon(Icons.hd_outlined, color: W.muted),
               const SizedBox(width: 16),
-              const Expanded(child: Text('Качество камеры', style: W.body)),
+              Expanded(child: Text('Качество камеры', style: W.body)),
               SegmentedButton<int>(
                 showSelectedIcon: false,
                 style: SegmentedButton.styleFrom(visualDensity: VisualDensity.compact),
@@ -850,7 +752,7 @@ class _CallsSectionState extends State<_CallsSection> {
           value: s.autoGain,
           onChanged: (v) => s.autoGain = v,
         ),
-        const Padding(
+        Padding(
           padding: EdgeInsets.fromLTRB(16, 2, 16, 10),
           child: Text('Микрофон, камера и звук применяются к следующему звонку.', style: W.small),
         ),
@@ -869,8 +771,8 @@ class _CallsSectionState extends State<_CallsSection> {
           onChanged: (v) => s.videoMuted = v,
         ),
         ListTile(
-          leading: const Icon(Icons.cleaning_services_outlined, color: W.muted),
-          title: const Text('Очистить кэш', style: W.body),
+          leading: Icon(Icons.cleaning_services_outlined, color: W.muted),
+          title: Text('Очистить кэш', style: W.body),
           subtitle: Text(_cacheSize == null ? 'Временные файлы и картинки' : 'Временные файлы: $_cacheSize', style: W.small),
           onTap: _clearCache,
         ),
@@ -943,11 +845,11 @@ class _NetworkSectionState extends State<_NetworkSection> {
                     : 'Нужен, если сервер и ты в разных сетях (друг далеко, нет «белого» IP)',
             style: W.small,
           ),
-          trailing: IconButton(tooltip: 'Обновить', icon: const Icon(Icons.refresh, color: W.muted), onPressed: _scan),
+          trailing: IconButton(tooltip: 'Обновить', icon: Icon(Icons.refresh, color: W.muted), onPressed: _scan),
         ),
         if (others.isNotEmpty)
           ListTile(
-            leading: const Icon(Icons.lan_outlined, color: W.muted),
+            leading: Icon(Icons.lan_outlined, color: W.muted),
             title: Text(others.map((a) => a.kind).toSet().join(', '), style: W.body),
             subtitle: Text(others.map((a) => a.ip).join(', '), style: W.small),
           ),
@@ -990,7 +892,7 @@ class _NetworkSectionState extends State<_NetworkSection> {
                 : u == api.serverUrl
                     ? IconButton(
                         tooltip: 'Копировать',
-                        icon: const Icon(Icons.copy, size: 18, color: W.muted),
+                        icon: Icon(Icons.copy, size: 18, color: W.muted),
                         onPressed: () {
                           Clipboard.setData(ClipboardData(text: u.replaceFirst('http://', '')));
                           toast(context, 'Скопировано');
@@ -998,7 +900,7 @@ class _NetworkSectionState extends State<_NetworkSection> {
                       )
                     : TextButton(onPressed: () => _connect(u), child: const Text('Подключиться')),
           ),
-        const Padding(
+        Padding(
           padding: EdgeInsets.fromLTRB(16, 4, 16, 14),
           child: Text(
             'Если основной адрес не отвечает, приложение само переключится на адрес сервера в Winter VPN. '
@@ -1059,7 +961,7 @@ class _VpnHintState extends State<VpnHint> {
             children: [
               Icon(on ? Icons.shield : Icons.shield_outlined, size: 18, color: on ? W.good : W.ice),
               const SizedBox(width: 8),
-              Text(on ? 'Winter VPN включён' : 'Winter VPN', style: const TextStyle(fontWeight: FontWeight.w700, color: W.text)),
+              Text(on ? 'Winter VPN включён' : 'Winter VPN', style: TextStyle(fontWeight: FontWeight.w700, color: W.text)),
             ],
           ),
           const SizedBox(height: 6),
@@ -1094,8 +996,8 @@ class _AboutSection extends StatelessWidget {
       title: 'О ПРИЛОЖЕНИИ',
       children: [
         ListTile(
-          leading: const Icon(Icons.ac_unit, color: W.muted),
-          title: const Text('Winter Chat', style: W.body),
+          leading: Icon(Icons.ac_unit, color: W.muted),
+          title: Text('Winter Chat', style: W.body),
           subtitle: Text('Сборка $buildNumber', style: W.small),
         ),
       ],

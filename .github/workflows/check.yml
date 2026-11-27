@@ -1,0 +1,35 @@
+name: Check (branches)
+
+# Быстрая проверка кода на рабочих ветках: анализ и тесты, без сборки и релиза.
+on:
+  push:
+    branches-ignore: [main]
+  workflow_dispatch:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Shared CI tools (winter-hub/ci)
+        uses: actions/checkout@v4
+        with:
+          repository: Wateroflord/winter-hub
+          path: .winter
+          sparse-checkout: /ci/
+          sparse-checkout-cone-mode: false
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: '3.47.9'
+          cache: true
+      - name: Prepare
+        run: flutter pub get
+      - name: Analyze
+        run: |
+          flutter analyze --no-fatal-infos --no-fatal-warnings lib test > analyze.txt 2>&1 && ok=1 || ok=0
+          cat analyze.txt
+          python3 .winter/ci/annotate.py analyze.txt "analyze"
+          [ "$ok" = 1 ]
+      - name: Unit tests
+        run: flutter test test

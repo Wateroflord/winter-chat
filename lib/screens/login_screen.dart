@@ -84,7 +84,7 @@ class _LoginScreenState extends State<LoginScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       body: Container(
-        decoration: const BoxDecoration(
+        decoration: BoxDecoration(
           gradient: RadialGradient(
             center: Alignment(-0.6, -1.1),
             radius: 1.4,
@@ -108,9 +108,9 @@ class _LoginScreenState extends State<LoginScreen> {
                         ),
                       ),
                       const SizedBox(height: 14),
-                      const Text('Winter Chat', textAlign: TextAlign.center, style: W.h1),
+                      Text('Winter Chat', textAlign: TextAlign.center, style: W.h1),
                       const SizedBox(height: 4),
-                      const Text('Чаты и звонки для своих', textAlign: TextAlign.center, style: W.small),
+                      Text('Чаты и звонки для своих', textAlign: TextAlign.center, style: W.small),
                       const SizedBox(height: 24),
                       _tabs(),
                       const SizedBox(height: 18),
@@ -118,7 +118,7 @@ class _LoginScreenState extends State<LoginScreen> {
                         controller: _server,
                         enabled: !_busy,
                         keyboardType: TextInputType.url,
-                        decoration: const InputDecoration(
+                        decoration: InputDecoration(
                           labelText: 'Адрес сервера',
                           hintText: 'например 192.168.1.10:8090',
                           prefixIcon: Icon(Icons.dns_outlined, color: W.muted),
@@ -129,7 +129,7 @@ class _LoginScreenState extends State<LoginScreen> {
                         controller: _username,
                         enabled: !_busy,
                         autofillHints: const [AutofillHints.username],
-                        decoration: const InputDecoration(
+                        decoration: InputDecoration(
                           labelText: 'Логин',
                           prefixIcon: Icon(Icons.alternate_email, color: W.muted),
                         ),
@@ -140,7 +140,7 @@ class _LoginScreenState extends State<LoginScreen> {
                           controller: _name,
                           enabled: !_busy,
                           textCapitalization: TextCapitalization.words,
-                          decoration: const InputDecoration(
+                          decoration: InputDecoration(
                             labelText: 'Имя (видят друзья)',
                             prefixIcon: Icon(Icons.person_outline, color: W.muted),
                           ),
@@ -155,7 +155,7 @@ class _LoginScreenState extends State<LoginScreen> {
                         onSubmitted: (_) => _register ? null : _submit(),
                         decoration: InputDecoration(
                           labelText: 'Пароль',
-                          prefixIcon: const Icon(Icons.lock_outline, color: W.muted),
+                          prefixIcon: Icon(Icons.lock_outline, color: W.muted),
                           suffixIcon: IconButton(
                             icon: Icon(_showPass ? Icons.visibility_off : Icons.visibility, color: W.muted),
                             onPressed: () => setState(() => _showPass = !_showPass),
@@ -168,7 +168,7 @@ class _LoginScreenState extends State<LoginScreen> {
                           controller: _password2,
                           enabled: !_busy,
                           obscureText: !_showPass,
-                          decoration: const InputDecoration(
+                          decoration: InputDecoration(
                             labelText: 'Пароль ещё раз',
                             prefixIcon: Icon(Icons.lock_outline, color: W.muted),
                           ),
@@ -179,7 +179,7 @@ class _LoginScreenState extends State<LoginScreen> {
                           enabled: !_busy,
                           textCapitalization: TextCapitalization.characters,
                           onSubmitted: (_) => _submit(),
-                          decoration: const InputDecoration(
+                          decoration: InputDecoration(
                             labelText: 'Код приглашения',
                             hintText: 'например SNOW-1234',
                             prefixIcon: Icon(Icons.key_outlined, color: W.muted),
@@ -195,7 +195,7 @@ class _LoginScreenState extends State<LoginScreen> {
                             borderRadius: BorderRadius.circular(12),
                             border: Border.all(color: W.bad.withValues(alpha: 0.4)),
                           ),
-                          child: Text(_error!, style: const TextStyle(color: W.bad)),
+                          child: Text(_error!, style: TextStyle(color: W.bad)),
                         ),
                         if (_error!.contains('подключиться') || _error!.contains('не отвечает') || _error!.contains('Нет связи')) ...[
                           const SizedBox(height: 10),
@@ -206,11 +206,11 @@ class _LoginScreenState extends State<LoginScreen> {
                       FilledButton(
                         onPressed: _busy ? null : _submit,
                         child: _busy
-                            ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2.4, color: W.bg))
+                            ? SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2.4, color: W.bg))
                             : Text(_register ? 'Зарегистрироваться' : 'Войти'),
                       ),
                       const SizedBox(height: 16),
-                      const Text(
+                      Text(
                         'Адрес сервера и код приглашения показывает программа Winter Chat Server на компьютере, где она запущена.',
                         textAlign: TextAlign.center,
                         style: W.small,
