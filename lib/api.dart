@@ -379,9 +379,87 @@ class Api extends ChangeNotifier {
 
   // ---------- звонки ----------
 
-  Future<({String url, String token})> callToken(String chatId) async {
+  // ---------- реакции, «печатает…», «прочитано», «в сети» ----------
+
+  /// Поставить или снять реакцию.
+  Future<void> react(String messageId, String emoji) async {
     try {
-      final res = await pb.send('/api/wc/call-token', method: 'POST', body: {'chat': chatId});
+      await pb.send('/api/wc/react', method: 'POST', body: {'message': messageId, 'emoji': emoji});
+    } catch (e) {
+      throw errorText(e, fallback: 'Реакция не поставилась — возможно, сервер старый');
+    }
+  }
+
+  final Map<String, DateTime> _typingSent = {};
+
+  /// Сообщить, что я печатаю (не чаще раза в 3 секунды).
+  void typing(String chatId) {
+    final now = DateTime.now();
+    final last = _typingSent[chatId];
+    if (last != null && now.difference(last) < const Duration(seconds: 3)) return;
+    _typingSent[chatId] = now;
+    pb.send('/api/wc/typing', method: 'POST', body: {'chat': chatId}).catchError((_) => null);
+  }
+
+  final Map<String, DateTime> _readSent = {};
+
+  /// Отметить на сервере, что я прочитал чат (для галочек у друзей).
+  void readOnServer(RecordModel chat) {
+    final mine = readsOf(chat)[myId] ?? '';
+    final lastAt = chat.getStringValue('last_at');
+    if (lastAt.isEmpty || mine.compareTo(lastAt) >= 0 || chat.getStringValue('last_author') == myId) return;
+    final now = DateTime.now();
+    final last = _readSent[chat.id];
+    if (last != null && now.difference(last) < const Duration(seconds: 3)) return;
+    _readSent[chat.id] = now;
+    pb.send('/api/wc/read', method: 'POST', body: {'chat': chat.id}).catchError((_) => null);
+  }
+
+  /// Кто до какого времени прочитал чат.
+  Map<String, String> readsOf(RecordModel chat) {
+    final r = chat.data['reads'];
+    if (r is! Map) return const {};
+    return {for (final e in r.entries) '${e.key}': '${e.value}'};
+  }
+
+  /// Прочитал ли кто-то из других участников сообщение, созданное в [created].
+  bool readByOthers(RecordModel chat, String created) {
+    for (final e in readsOf(chat).entries) {
+      if (e.key != myId && e.value.compareTo(created) >= 0) return true;
+    }
+    return false;
+  }
+
+  /// Отметиться «в сети».
+  Future<void> ping() async {
+    if (!loggedIn || !Settings.I.showOnline) return;
+    try {
+      await pb.send('/api/wc/ping', method: 'POST');
+    } catch (_) {}
+  }
+
+  DateTime? lastSeen(String userId) => parseDate(users[userId]?.getStringValue('last_seen') ?? '');
+
+  bool isOnline(String userId) {
+    final t = lastSeen(userId);
+    return t != null && DateTime.now().difference(t) < const Duration(seconds: 150);
+  }
+
+  /// «в сети», «был(а) 5 мин назад», «был(а) вчера в 21:40».
+  String lastSeenText(String userId) {
+    final t = lastSeen(userId);
+    if (t == null) return '';
+    final d = DateTime.now().difference(t);
+    if (d < const Duration(seconds: 150)) return 'в сети';
+    if (d < const Duration(hours: 1)) return 'был(а) ${d.inMinutes} мин назад';
+    if (sameDay(t, DateTime.now())) return 'был(а) сегодня в ${hhmm(t)}';
+    if (sameDay(t, DateTime.now().subtract(const Duration(days: 1)))) return 'был(а) вчера в ${hhmm(t)}';
+    return 'был(а) ${shortTime(t)}';
+  }
+
+  Future<({String url, String token})> callToken(String chatId, {bool quiet = false}) async {
+    try {
+      final res = await pb.send('/api/wc/call-token', method: 'POST', body: {'chat': chatId, if (quiet) 'quiet': true});
       final path = (res['path'] ?? '/lk') as String;
       return (url: '$serverUrl$path', token: res['token'] as String);
     } catch (e) {

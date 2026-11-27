@@ -12,6 +12,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../api.dart';
 import '../call_controller.dart';
+import '../instant.dart';
 import '../settings.dart';
 import '../store.dart';
 import '../theme.dart';
@@ -19,9 +20,11 @@ import '../util.dart';
 import '../widgets/avatar.dart';
 import '../widgets/chat_background.dart';
 import '../widgets/video_message.dart';
+import '../widgets/voice.dart';
 import 'home_screen.dart';
 import 'people_sheet.dart';
 import 'profile_sheet.dart';
+import 'search_screen.dart';
 
 class ChatScreen extends StatefulWidget {
   const ChatScreen({super.key, required this.chatId, this.embedded = false});
@@ -47,6 +50,14 @@ class _ChatScreenState extends State<ChatScreen> {
   final List<PlatformFile> _pending = [];
   bool _sending = false;
   RecordModel? _editing;
+  RecordModel? _replyTo;
+  final _voice = VoiceRecorder();
+  Timer? _voiceTick;
+  bool _recording = false;
+  final Map<String, GlobalKey> _keys = {};
+  String? _highlight;
+  List<RecordModel> _pinned = [];
+  String _pinsSig = '';
 
   PocketBase get _pb => Api.I.pb;
   RecordModel? get _chat => Store.I.chat(widget.chatId);
@@ -73,6 +84,8 @@ class _ChatScreenState extends State<ChatScreen> {
     Settings.I.removeListener(_changed);
     Api.I.removeListener(_serverMaybeChanged);
     _poll?.cancel();
+    _voiceTick?.cancel();
+    _voice.dispose();
     _unsub?.call();
     _text.dispose();
     _focus.dispose();
@@ -84,6 +97,17 @@ class _ChatScreenState extends State<ChatScreen> {
     if (!mounted) return;
     setState(() {});
     _markRead();
+    _refreshPins();
+  }
+
+  /// Закреплённые изменились — подгрузить их тексты.
+  Future<void> _refreshPins() async {
+    final ids = _chat?.getListValue<String>('pins') ?? const [];
+    final sig = ids.join(',');
+    if (sig == _pinsSig) return;
+    _pinsSig = sig;
+    final list = await loadMessagesByIds(ids);
+    if (mounted && sig == _pinsSig) setState(() => _pinned = list);
   }
 
   String _server = '';
@@ -102,13 +126,15 @@ class _ChatScreenState extends State<ChatScreen> {
     if (c != null && Api.I.markRead(c)) {
       Future.microtask(Store.I.ping);
     }
+    // Друзья увидят ✓✓, только если я действительно смотрю на чат.
+    if (c != null && !Instant.background) Api.I.readOnServer(c);
   }
 
   String get _filter => _pb.filter('chat = {:c}', {'c': widget.chatId});
 
   Future<void> _load() async {
     try {
-      final res = await _pb.collection('messages').getList(page: 1, perPage: 50, filter: _filter, sort: '-created', skipTotal: true);
+      final res = await _pb.collection('messages').getList(page: 1, perPage: 50, filter: _filter, sort: '-created', skipTotal: true, expand: 'reply_to');
       _msgs
         ..clear()
         ..addAll(res.items);
@@ -120,12 +146,13 @@ class _ChatScreenState extends State<ChatScreen> {
     _loading = false;
     if (mounted) setState(() {});
     _markRead();
+    _refreshPins();
   }
 
   Future<void> _fetchNewest() async {
     if (_loading) return;
     try {
-      final res = await _pb.collection('messages').getList(page: 1, perPage: 30, filter: _filter, sort: '-created', skipTotal: true);
+      final res = await _pb.collection('messages').getList(page: 1, perPage: 30, filter: _filter, sort: '-created', skipTotal: true, expand: 'reply_to');
       var changed = false;
       for (final m in res.items) {
         if (_upsert(m)) changed = true;
@@ -145,6 +172,7 @@ class _ChatScreenState extends State<ChatScreen> {
             filter: _pb.filter('chat = {:c} && created < {:t}', {'c': widget.chatId, 't': oldest}),
             sort: '-created',
             skipTotal: true,
+            expand: 'reply_to',
           );
       _msgs.addAll(res.items.where((m) => !_msgs.any((x) => x.id == m.id)));
       _hasMore = res.items.length == 50;
@@ -167,7 +195,7 @@ class _ChatScreenState extends State<ChatScreen> {
           _upsert(r);
         }
         if (mounted) setState(() {});
-      }, filter: _filter);
+      }, filter: _filter, expand: 'reply_to');
     } catch (_) {}
   }
 
@@ -224,14 +252,16 @@ class _ChatScreenState extends State<ChatScreen> {
           }
         }
         final rec = await _pb.collection('messages').create(
-          body: {'chat': widget.chatId, 'text': first ? text : ''},
+          body: {'chat': widget.chatId, 'text': first ? text : '', if (first && _replyTo != null) 'reply_to': _replyTo!.id},
           files: multipart,
+          expand: 'reply_to',
         );
         _upsert(rec);
         first = false;
       } while (rest.isNotEmpty);
       _text.clear();
       _pending.clear();
+      _replyTo = null;
     } catch (e) {
       if (mounted) toast(context, Api.errorText(e, fallback: 'Не удалось отправить'));
     }
@@ -240,6 +270,113 @@ class _ChatScreenState extends State<ChatScreen> {
       _focus.requestFocus();
       if (_scroll.hasClients) _scroll.jumpTo(0);
     }
+  }
+
+  // ---------- голосовые ----------
+
+  Future<void> _startVoice() async {
+    final err = await _voice.start();
+    if (err != null) {
+      if (mounted) toast(context, err);
+      return;
+    }
+    setState(() => _recording = true);
+    _voiceTick = Timer.periodic(const Duration(milliseconds: 250), (_) {
+      if (mounted) setState(() {});
+      if (_voice.elapsed > const Duration(minutes: 10)) _stopVoice(send: true);
+    });
+  }
+
+  Future<void> _stopVoice({required bool send}) async {
+    _voiceTick?.cancel();
+    _voiceTick = null;
+    setState(() => _recording = false);
+    if (!send) {
+      await _voice.cancel();
+      return;
+    }
+    final path = await _voice.stop();
+    if (path == null) {
+      if (mounted) toast(context, 'Слишком коротко — держи запись хотя бы секунду');
+      return;
+    }
+    setState(() => _sending = true);
+    try {
+      final ext = path.split('.').last;
+      final rec = await _pb.collection('messages').create(
+        body: {'chat': widget.chatId, 'text': '', if (_replyTo != null) 'reply_to': _replyTo!.id},
+        files: [await http.MultipartFile.fromPath('files', path, filename: 'voice_${DateTime.now().millisecondsSinceEpoch}.$ext')],
+        expand: 'reply_to',
+      );
+      _upsert(rec);
+      _replyTo = null;
+      try {
+        File(path).deleteSync();
+      } catch (_) {}
+    } catch (e) {
+      if (mounted) toast(context, Api.errorText(e, fallback: 'Голосовое не отправилось'));
+    }
+    if (mounted) setState(() => _sending = false);
+  }
+
+  // ---------- реакции, ответы, закрепы ----------
+
+  Future<void> _react(RecordModel m, String emoji) async {
+    try {
+      await Api.I.react(m.id, emoji);
+    } catch (e) {
+      if (mounted) toast(context, '$e');
+    }
+  }
+
+  void _reply(RecordModel m) {
+    setState(() {
+      _replyTo = m;
+      _editing = null;
+    });
+    _focus.requestFocus();
+  }
+
+  Future<void> _togglePin(RecordModel m) async {
+    final chat = _chat;
+    if (chat == null) return;
+    final pinned = chat.getListValue<String>('pins').contains(m.id);
+    try {
+      final r = await _pb.collection('chats').update(chat.id, body: {pinned ? 'pins-' : 'pins+': m.id});
+      if (!r.data.containsKey('pins')) {
+        if (mounted) toast(context, 'Сервер Winter Chat старый — обнови его, чтобы закреплять сообщения');
+        return;
+      }
+      Store.I.replaceChat(r);
+      if (mounted) toast(context, pinned ? 'Откреплено' : 'Закреплено 📌');
+    } catch (e) {
+      if (mounted) toast(context, Api.errorText(e));
+    }
+  }
+
+  /// Показать сообщение: прокрутить к нему, если оно загружено, иначе — открыть с соседними.
+  void _jumpTo(RecordModel m) {
+    final key = _keys[m.id];
+    final ctx = key?.currentContext;
+    if (ctx != null) {
+      Scrollable.ensureVisible(ctx, alignment: 0.5, duration: const Duration(milliseconds: 300));
+      setState(() => _highlight = m.id);
+      Future.delayed(const Duration(milliseconds: 1600), () {
+        if (mounted && _highlight == m.id) setState(() => _highlight = null);
+      });
+    } else {
+      showMessageContext(context, widget.chatId, m);
+    }
+  }
+
+  RecordModel? _replyOf(RecordModel m) {
+    final id = m.getStringValue('reply_to');
+    if (id.isEmpty) return null;
+    for (final x in _msgs) {
+      if (x.id == id) return x;
+    }
+    final ex = m.expand['reply_to'];
+    return ex == null || ex.isEmpty ? null : ex.first;
   }
 
   Future<void> _saveEdit(String text) async {
@@ -281,8 +418,11 @@ class _ChatScreenState extends State<ChatScreen> {
     final mine = m.getStringValue('author') == Api.I.myId;
     final text = m.getStringValue('text');
     final files = m.getListValue<String>('files');
+    final pinned = _chat?.getListValue<String>('pins').contains(m.id) ?? false;
     final items = <(String, IconData, String)>[
+      ('reply', Icons.reply, 'Ответить'),
       if (text.isNotEmpty) ('copy', Icons.copy, 'Копировать текст'),
+      (pinned ? 'unpin' : 'pin', Icons.push_pin_outlined, pinned ? 'Открепить' : 'Закрепить'),
       for (final f in files) ('save:$f', Icons.download, 'Скачать ${prettyFileName(f)}'),
       if (mine && text.isNotEmpty) ('edit', Icons.edit, 'Изменить'),
       if (mine) ('delete', Icons.delete_outline, 'Удалить'),
@@ -294,6 +434,12 @@ class _ChatScreenState extends State<ChatScreen> {
         context: context,
         position: RelativeRect.fromLTRB(at.dx, at.dy, at.dx, at.dy),
         items: [
+          PopupMenuItem<String>(
+            enabled: false,
+            padding: const EdgeInsets.symmetric(horizontal: 6),
+            child: _ReactionRow(onPick: (e) => Navigator.of(context).pop('react:$e')),
+          ),
+          const PopupMenuDivider(),
           for (final it in items)
             PopupMenuItem(
               value: it.$1,
@@ -309,6 +455,11 @@ class _ChatScreenState extends State<ChatScreen> {
             mainAxisSize: MainAxisSize.min,
             children: [
               const SizedBox(height: 8),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                child: _ReactionRow(onPick: (e) => Navigator.pop(ctx, 'react:$e')),
+              ),
+              Divider(color: W.border),
               for (final it in items)
                 ListTile(
                   leading: Icon(it.$2, color: it.$1 == 'delete' ? W.bad : W.muted),
@@ -321,7 +472,13 @@ class _ChatScreenState extends State<ChatScreen> {
       );
     }
     if (choice == null || !mounted) return;
-    if (choice == 'copy') {
+    if (choice.startsWith('react:')) {
+      await _react(m, choice.substring(6));
+    } else if (choice == 'reply') {
+      _reply(m);
+    } else if (choice == 'pin' || choice == 'unpin') {
+      await _togglePin(m);
+    } else if (choice == 'copy') {
       await Clipboard.setData(ClipboardData(text: text));
       if (mounted) toast(context, 'Скопировано');
     } else if (choice == 'edit') {
@@ -345,6 +502,10 @@ class _ChatScreenState extends State<ChatScreen> {
     final members = chat.getListValue<String>('members');
     try {
       switch (action) {
+        case 'search':
+          await Navigator.of(context).push(MaterialPageRoute(builder: (_) => SearchScreen(chatId: chat.id)));
+        case 'pins':
+          await showPins(context, chat);
         case 'style':
           await showChatStyle(context, chat);
         case 'group':
@@ -409,7 +570,9 @@ class _ChatScreenState extends State<ChatScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(title, maxLines: 1, overflow: TextOverflow.ellipsis),
-                    if (isGroup)
+                    if (isGroup && _typingText(chat).isNotEmpty)
+                      Text(_typingText(chat), maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 12, color: W.ice, fontWeight: FontWeight.w400))
+                    else if (isGroup)
                       Text(
                         [
                           '${members.length} участников',
@@ -419,12 +582,12 @@ class _ChatScreenState extends State<ChatScreen> {
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(fontSize: 12, color: W.muted, fontWeight: FontWeight.w400),
                       )
-                    else if (api.statusText(api.otherMember(chat) ?? '').isNotEmpty)
+                    else if (_subtitle(chat).isNotEmpty)
                       Text(
-                        api.statusText(api.otherMember(chat)!),
+                        _subtitle(chat),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: TextStyle(fontSize: 12, color: W.muted, fontWeight: FontWeight.w400),
+                        style: TextStyle(fontSize: 12, color: _typingText(chat).isNotEmpty || api.isOnline(api.otherMember(chat) ?? '') ? W.ice : W.muted, fontWeight: FontWeight.w400),
                       ),
                   ],
                 ),
@@ -433,6 +596,12 @@ class _ChatScreenState extends State<ChatScreen> {
           ),
         ),
         actions: [
+          if (isGroup)
+            IconButton(
+              tooltip: 'Голосовая комната: зайти без звонка остальным',
+              icon: const Icon(Icons.headset_mic_outlined),
+              onPressed: () => startCall(context, chat.id, title, quiet: true),
+            ),
           IconButton(
             tooltip: 'Аудиозвонок',
             icon: const Icon(Icons.call_outlined),
@@ -446,6 +615,8 @@ class _ChatScreenState extends State<ChatScreen> {
           PopupMenuButton<String>(
             onSelected: _chatMenu,
             itemBuilder: (_) => [
+              const PopupMenuItem(value: 'search', child: Text('Поиск по чату')),
+              if (chat.getListValue<String>('pins').isNotEmpty) const PopupMenuItem(value: 'pins', child: Text('Закреплённые сообщения')),
               const PopupMenuItem(value: 'style', child: Text('Оформление и настройки чата')),
               if (isGroup) const PopupMenuItem(value: 'group', child: Text('Фото и описание группы')),
               if (isGroup) const PopupMenuItem(value: 'members', child: Text('Участники')),
@@ -461,6 +632,7 @@ class _ChatScreenState extends State<ChatScreen> {
         children: [
           if (!widget.embedded) const InCallBar(),
           if (inCall.isNotEmpty && !iAmInCall) _callBanner(chat, title, inCall),
+          if (_pinned.isNotEmpty) _pinsBar(chat),
           Expanded(child: ChatBackground(wallpaper: Settings.I.wallpaperFor(chat.id), child: _messagesView(isGroup))),
           _composer(),
         ],
@@ -468,23 +640,72 @@ class _ChatScreenState extends State<ChatScreen> {
     );
   }
 
+  Widget _pinsBar(RecordModel chat) {
+    final last = _pinned.first;
+    return Material(
+      color: W.surface,
+      child: InkWell(
+        onTap: () => _pinned.length == 1 ? _jumpTo(last) : showPins(context, chat),
+        child: Container(
+          padding: const EdgeInsets.fromLTRB(14, 8, 8, 8),
+          decoration: BoxDecoration(border: Border(bottom: BorderSide(color: W.border))),
+          child: Row(
+            children: [
+              Icon(Icons.push_pin, size: 18, color: W.ice),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(_pinned.length == 1 ? 'Закреплено' : 'Закреплено · ${_pinned.length}', style: TextStyle(fontSize: 12, color: W.ice, fontWeight: FontWeight.w700)),
+                    Text(messageSnippet(last), maxLines: 1, overflow: TextOverflow.ellipsis, style: W.small.copyWith(color: W.text)),
+                  ],
+                ),
+              ),
+              if (_pinned.length > 1) Icon(Icons.chevron_right, color: W.muted),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// «печатает…» / «Вова печатает…» / «Вова и Стас печатают…».
+  String _typingText(RecordModel chat) {
+    final who = Store.I.typingIn(chat.id);
+    if (who.isEmpty) return '';
+    if (!chat.getBoolValue('is_group')) return 'печатает…';
+    final names = who.map(Api.I.nameOf).toList();
+    return names.length == 1 ? '${names.first} печатает…' : '${names.take(2).join(' и ')} печатают…';
+  }
+
+  /// Под именем в личном чате: печатает / в сети / был(а) … и статус.
+  String _subtitle(RecordModel chat) {
+    final t = _typingText(chat);
+    if (t.isNotEmpty) return t;
+    final other = Api.I.otherMember(chat);
+    if (other == null) return '';
+    return [Api.I.lastSeenText(other), Api.I.statusText(other)].where((x) => x.isNotEmpty).join(' · ');
+  }
+
   Widget _callBanner(RecordModel chat, String title, List<String> people) {
     final names = people.map(Api.I.nameOf).join(', ');
+    final quiet = Store.I.calls[chat.id]?.getBoolValue('quiet') ?? false;
     return Material(
       color: W.good.withValues(alpha: 0.14),
       child: Padding(
         padding: const EdgeInsets.fromLTRB(14, 8, 8, 8),
         child: Row(
           children: [
-            Icon(Icons.call, color: W.good, size: 18),
+            Icon(quiet ? Icons.headset_mic : Icons.call, color: W.good, size: 18),
             const SizedBox(width: 10),
             Expanded(
-              child: Text('Идёт звонок: $names', maxLines: 2, overflow: TextOverflow.ellipsis, style: TextStyle(color: W.good)),
+              child: Text(quiet ? 'В голосовой комнате: $names' : 'Идёт звонок: $names', maxLines: 2, overflow: TextOverflow.ellipsis, style: TextStyle(color: W.good)),
             ),
             FilledButton(
               style: FilledButton.styleFrom(backgroundColor: W.good, padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8)),
-              onPressed: () => startCall(context, chat.id, title),
-              child: const Text('Войти'),
+              onPressed: () => startCall(context, chat.id, title, quiet: quiet),
+              child: Text(quiet ? 'Зайти' : 'Войти'),
             ),
           ],
         ),
@@ -538,12 +759,19 @@ class _ChatScreenState extends State<ChatScreen> {
           children: [
             if (newDay) _DayChip(dayLabel(d)),
             MessageBubble(
+              key: _keys.putIfAbsent(m.id, () => GlobalKey()),
               message: m,
               showAuthor: isGroup && !grouped,
               compact: grouped,
               onMenu: (at) => _messageMenu(m, at),
               chatId: widget.chatId,
               isGroup: isGroup,
+              reply: _replyOf(m),
+              onReplyTap: _jumpTo,
+              onReact: (e) => _react(m, e),
+              onSwipeReply: () => _reply(m),
+              read: _chat == null ? false : Api.I.readByOthers(_chat!, m.getStringValue('created')),
+              highlight: _highlight == m.id,
             ),
           ],
         );
@@ -584,6 +812,52 @@ class _ChatScreenState extends State<ChatScreen> {
                     ],
                   ),
                 ),
+              if (_replyTo != null)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 6, left: 6),
+                  child: Row(
+                    children: [
+                      Icon(Icons.reply, size: 18, color: W.ice),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text('Ответ ${Api.I.nameOf(_replyTo!.getStringValue('author'))}', style: TextStyle(color: W.ice, fontSize: 12.5, fontWeight: FontWeight.w700)),
+                            Text(messageSnippet(_replyTo!), maxLines: 1, overflow: TextOverflow.ellipsis, style: W.small),
+                          ],
+                        ),
+                      ),
+                      IconButton(
+                        visualDensity: VisualDensity.compact,
+                        icon: const Icon(Icons.close, size: 18),
+                        onPressed: () => setState(() => _replyTo = null),
+                      ),
+                    ],
+                  ),
+                ),
+              if (_recording)
+                Row(
+                  children: [
+                    IconButton(
+                      tooltip: 'Отменить',
+                      onPressed: () => _stopVoice(send: false),
+                      icon: Icon(Icons.delete_outline, color: W.bad),
+                    ),
+                    const SizedBox(width: 6),
+                    Container(width: 10, height: 10, decoration: BoxDecoration(color: W.bad, shape: BoxShape.circle)),
+                    const SizedBox(width: 8),
+                    Text(mmss(_voice.elapsed), style: W.body.copyWith(fontFeatures: const [FontFeature.tabularFigures()])),
+                    const SizedBox(width: 10),
+                    Expanded(child: Text('Идёт запись голосового…', style: W.small)),
+                    IconButton.filled(
+                      tooltip: 'Отправить',
+                      style: IconButton.styleFrom(backgroundColor: W.ice, foregroundColor: W.onAccent),
+                      onPressed: () => _stopVoice(send: true),
+                      icon: const Icon(Icons.send_rounded),
+                    ),
+                  ],
+                ),
               if (_pending.isNotEmpty)
                 SizedBox(
                   height: 44,
@@ -604,6 +878,7 @@ class _ChatScreenState extends State<ChatScreen> {
                     ],
                   ),
                 ),
+              if (!_recording)
               Row(
                 crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
@@ -641,7 +916,10 @@ class _ChatScreenState extends State<ChatScreen> {
                         maxLines: 6,
                         textCapitalization: TextCapitalization.sentences,
                         keyboardType: TextInputType.multiline,
-                        onChanged: (_) => setState(() {}),
+                        onChanged: (v) {
+                          setState(() {});
+                          if (v.trim().isNotEmpty) Api.I.typing(widget.chatId);
+                        },
                         decoration: InputDecoration(
                           hintText: _desktop
                               ? (Settings.I.enterSends ? 'Сообщение (Enter — отправить, Shift+Enter — новая строка)' : 'Сообщение (Ctrl+Enter — отправить)')
@@ -661,11 +939,18 @@ class _ChatScreenState extends State<ChatScreen> {
                           padding: EdgeInsets.all(12),
                           child: SizedBox(width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2.4)),
                         )
-                      : IconButton.filled(
-                          style: IconButton.styleFrom(backgroundColor: canSend ? W.ice : W.surface2, foregroundColor: canSend ? W.onAccent : W.muted),
-                          icon: Icon(_editing != null ? Icons.check : Icons.send_rounded),
-                          onPressed: canSend || _editing != null ? _send : null,
-                        ),
+                      : !canSend && _editing == null
+                          ? IconButton.filled(
+                              tooltip: 'Голосовое сообщение',
+                              style: IconButton.styleFrom(backgroundColor: W.surface2, foregroundColor: W.text),
+                              icon: const Icon(Icons.mic_none),
+                              onPressed: _startVoice,
+                            )
+                          : IconButton.filled(
+                              style: IconButton.styleFrom(backgroundColor: canSend ? W.ice : W.surface2, foregroundColor: canSend ? W.onAccent : W.muted),
+                              icon: Icon(_editing != null ? Icons.check : Icons.send_rounded),
+                              onPressed: canSend || _editing != null ? _send : null,
+                            ),
                 ],
               ),
             ],
@@ -709,6 +994,12 @@ class MessageBubble extends StatelessWidget {
     required this.onMenu,
     this.chatId,
     this.isGroup = false,
+    this.reply,
+    this.onReplyTap,
+    this.onReact,
+    this.onSwipeReply,
+    this.read = false,
+    this.highlight = false,
   });
   final RecordModel message;
   final bool showAuthor;
@@ -716,6 +1007,16 @@ class MessageBubble extends StatelessWidget {
   final void Function(Offset? at) onMenu;
   final String? chatId;
   final bool isGroup;
+
+  /// Сообщение, на которое это — ответ.
+  final RecordModel? reply;
+  final void Function(RecordModel m)? onReplyTap;
+  final void Function(String emoji)? onReact;
+  final VoidCallback? onSwipeReply;
+
+  /// Моё сообщение уже прочитал кто-то из друзей (✓✓).
+  final bool read;
+  final bool highlight;
 
   @override
   Widget build(BuildContext context) {
@@ -726,9 +1027,12 @@ class MessageBubble extends StatelessWidget {
     final files = message.getListValue<String>('files');
     final images = files.where((f) => fileKind(f) == FileKind.image).toList();
     final videos = files.where((f) => fileKind(f) == FileKind.video).toList();
-    final others = files.where((f) => fileKind(f) != FileKind.image && fileKind(f) != FileKind.video).toList();
+    final audios = files.where((f) => fileKind(f) == FileKind.audio).toList();
+    final others = files.where((f) => fileKind(f) == FileKind.other).toList();
     final settings = Settings.I;
     final d = parseDate(message.getStringValue('created'));
+    final reactions = _reactions(message);
+    final themeCode = Settings.parseTheme(text) == null ? null : text;
     final edited = message.getBoolValue('edited');
     final style = settings.bubbleStyle;
     final list = style == 3;
@@ -779,6 +1083,10 @@ class MessageBubble extends StatelessWidget {
                   ),
                   const SizedBox(width: 8),
                   Text(time, style: TextStyle(fontSize: 11.5, color: W.muted)),
+                  if (mine) ...[
+                    const SizedBox(width: 4),
+                    Icon(read ? Icons.done_all : Icons.done, size: 14, color: read ? W.ice : W.muted),
+                  ],
                 ],
               ),
             ),
@@ -789,6 +1097,33 @@ class MessageBubble extends StatelessWidget {
                 onTap: () => showProfile(context, author),
                 child: Text(api.nameOf(author), style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: nameColorFor(author))),
               ),
+            ),
+          if (reply != null)
+            GestureDetector(
+              onTap: onReplyTap == null ? null : () => onReplyTap!(reply!),
+              child: Container(
+                margin: const EdgeInsets.only(bottom: 5, top: 1),
+                padding: const EdgeInsets.fromLTRB(8, 4, 8, 4),
+                decoration: BoxDecoration(
+                  color: (list ? W.surface2 : fg.withValues(alpha: 0.08)),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border(left: BorderSide(color: nameColorFor(reply!.getStringValue('author')), width: 3)),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(api.nameOf(reply!.getStringValue('author')),
+                        style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: nameColorFor(reply!.getStringValue('author')))),
+                    Text(messageSnippet(reply!), maxLines: 2, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 12.5, color: fg.withValues(alpha: 0.8))),
+                  ],
+                ),
+              ),
+            )
+          else if (message.getStringValue('reply_to').isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 4),
+              child: Text('↩ ответ на удалённое сообщение', style: TextStyle(fontSize: 12, fontStyle: FontStyle.italic, color: fg.withValues(alpha: 0.6))),
             ),
           if (images.isNotEmpty)
             Padding(
@@ -807,12 +1142,43 @@ class MessageBubble extends StatelessWidget {
               ),
             ),
           for (final f in videos) VideoMessage(key: ValueKey('${message.id}/$f'), message: message, file: f, width: (maxW - 20).clamp(160.0, 480.0).toDouble()),
+          for (final f in audios) VoiceMessage(key: ValueKey('${message.id}/$f'), message: message, file: f, width: maxW - 20, color: fg),
           for (final f in others) _FileTile(message: message, file: f),
-          if (text.isNotEmpty) _LinkText(text, color: fg),
+          if (themeCode != null)
+            _ThemeCard(code: themeCode, color: fg)
+          else if (text.isNotEmpty)
+            _LinkText(text, color: fg),
+          if (reactions.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(top: 4),
+              child: Wrap(
+                spacing: 4,
+                runSpacing: 4,
+                children: [
+                  for (final r in reactions.entries)
+                    _ReactionChip(
+                      emoji: r.key,
+                      users: r.value,
+                      mine: r.value.contains(api.myId),
+                      onTap: onReact == null ? null : () => onReact!(r.key),
+                      fg: fg,
+                    ),
+                ],
+              ),
+            ),
           if (!list)
             Align(
               alignment: Alignment.bottomRight,
-              child: Text(time, style: TextStyle(fontSize: 11, color: sub)),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(time, style: TextStyle(fontSize: 11, color: sub)),
+                  if (mine) ...[
+                    const SizedBox(width: 3),
+                    Icon(read ? Icons.done_all : Icons.done, size: 14, color: read ? (onColor(bg) == Colors.white ? W.iceLight : W.ice) : sub),
+                  ],
+                ],
+              ),
             ),
         ],
       ),
@@ -856,8 +1222,123 @@ class MessageBubble extends StatelessWidget {
             child: GestureDetector(
               onLongPress: () => onMenu(null),
               onSecondaryTapDown: (det) => onMenu(det.globalPosition),
-              child: bubble,
+              onDoubleTap: onReact == null ? null : () => onReact!('❤️'),
+              // Смахнуть вправо — ответить.
+              onHorizontalDragEnd: onSwipeReply == null
+                  ? null
+                  : (det) {
+                      if ((det.primaryVelocity ?? 0) > 350) onSwipeReply!();
+                    },
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 300),
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(r + 4),
+                  boxShadow: highlight ? [BoxShadow(color: W.ice.withValues(alpha: 0.55), blurRadius: 14, spreadRadius: 1)] : null,
+                ),
+                child: bubble,
+              ),
             ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Реакции из сообщения: эмодзи → кто поставил.
+  static Map<String, List<String>> _reactions(RecordModel m) {
+    final r = m.data['reactions'];
+    if (r is! Map) return const {};
+    return {
+      for (final e in r.entries)
+        if (e.value is List && (e.value as List).isNotEmpty) '${e.key}': [for (final u in e.value as List) '$u'],
+    };
+  }
+}
+
+/// Быстрые реакции в меню сообщения.
+class _ReactionRow extends StatelessWidget {
+  const _ReactionRow({required this.onPick});
+  final void Function(String emoji) onPick;
+  static const quick = ['👍', '❤️', '😂', '😮', '😢', '🔥', '👏', '🎉'];
+
+  @override
+  Widget build(BuildContext context) => Wrap(
+        spacing: 2,
+        children: [
+          for (final e in quick)
+            InkWell(
+              borderRadius: BorderRadius.circular(20),
+              onTap: () => onPick(e),
+              child: Padding(padding: const EdgeInsets.all(6), child: Text(e, style: const TextStyle(fontSize: 22))),
+            ),
+        ],
+      );
+}
+
+class _ReactionChip extends StatelessWidget {
+  const _ReactionChip({required this.emoji, required this.users, required this.mine, required this.onTap, required this.fg});
+  final String emoji;
+  final List<String> users;
+  final bool mine;
+  final VoidCallback? onTap;
+  final Color fg;
+
+  @override
+  Widget build(BuildContext context) => Tooltip(
+        message: users.map(Api.I.nameOf).join(', '),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(12),
+          onTap: onTap,
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+            decoration: BoxDecoration(
+              color: mine ? W.ice.withValues(alpha: 0.25) : fg.withValues(alpha: 0.08),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: mine ? W.ice : Colors.transparent),
+            ),
+            child: Text('$emoji ${users.length}', style: TextStyle(fontSize: 13, color: fg)),
+          ),
+        ),
+      );
+}
+
+/// Код темы оформления в сообщении: кнопка «Применить».
+class _ThemeCard extends StatelessWidget {
+  const _ThemeCard({required this.code, required this.color});
+  final String code;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    final j = Settings.parseTheme(code)!;
+    final p = paletteById(j['p'] as String);
+    final accent = Color(j['a'] as int);
+    return Container(
+      margin: const EdgeInsets.only(top: 2),
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(color: p.bg, borderRadius: BorderRadius.circular(12), border: Border.all(color: accent.withValues(alpha: 0.6))),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(width: 28, height: 28, decoration: BoxDecoration(color: accent, shape: BoxShape.circle)),
+          const SizedBox(width: 10),
+          Flexible(
+            child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('🎨 Тема оформления', style: TextStyle(color: p.text, fontWeight: FontWeight.w700)),
+              Text('${p.name} · ${Settings.bubbleStyles[((j['bs'] as int?) ?? 0).clamp(0, 3)].toLowerCase()}', style: TextStyle(color: p.muted, fontSize: 12)),
+            ],
+            ),
+          ),
+          const SizedBox(width: 12),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: accent, foregroundColor: onColor(accent), padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8)),
+            onPressed: () async {
+              final ok = await Settings.I.importTheme(code);
+              if (context.mounted) toast(context, ok ? 'Тема применена ✨' : 'Код темы не подошёл');
+            },
+            child: const Text('Применить'),
           ),
         ],
       ),

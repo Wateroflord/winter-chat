@@ -267,7 +267,7 @@ func updateChatPreview(app core.App, msg *core.Record) {
 }
 
 func previewForFiles(files []string) string {
-	img, vid := 0, 0
+	img, vid, aud, voice := 0, 0, 0, 0
 	for _, f := range files {
 		l := strings.ToLower(f)
 		switch {
@@ -275,9 +275,18 @@ func previewForFiles(files []string) string {
 			img++
 		case hasAnySuffix(l, ".mp4", ".mov", ".webm", ".mkv", ".avi", ".m4v"):
 			vid++
+		case hasAnySuffix(l, ".m4a", ".mp3", ".ogg", ".opus", ".wav", ".aac", ".flac"):
+			aud++
+			if strings.HasPrefix(l, "voice_") {
+				voice++
+			}
 		}
 	}
 	switch {
+	case voice == len(files):
+		return "🎤 Голосовое"
+	case aud == len(files):
+		return "🎵 Аудио"
 	case img == len(files):
 		return "🖼 Фото"
 	case vid == len(files):

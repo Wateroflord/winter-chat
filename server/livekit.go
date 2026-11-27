@@ -329,6 +329,7 @@ func (lk *LiveKit) syncCalls() {
 		ids, ok := active[chat]
 		if !ok {
 			_ = app.Delete(rec)
+			forgetQuiet(chat)
 			continue
 		}
 		seen[chat] = true
@@ -356,6 +357,7 @@ func (lk *LiveKit) syncCalls() {
 		rec := core.NewRecord(col)
 		rec.Set("chat", chat)
 		rec.Set("participants", ids)
+		rec.Set("quiet", isQuiet(chat))
 		_ = app.Save(rec)
 	}
 }

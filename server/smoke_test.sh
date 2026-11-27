@@ -66,6 +66,35 @@ code=$(curl -s -o /dev/null -w '%{http_code}' -X POST $B/api/collections/message
 [ "$code" != "200" ] || fail "посторонний может писать в чат"
 ok "приватность"
 
+# --- Реакции, ответы, «прочитано», «в сети», закрепы ---
+J='Content-Type: application/json'
+R1=$(curl -s -X POST $B/api/wc/react -H "Authorization: $T1" -H "$J" -d "{\"message\":\"$MID\",\"emoji\":\"🔥\"}")
+echo "$R1" | jq -e ".reactions[\"🔥\"]==[\"$U1\"]" >/dev/null || fail "реакция: $R1"
+curl -s -X POST $B/api/wc/react -H "Authorization: $T2" -H "$J" -d "{\"message\":\"$MID\",\"emoji\":\"🔥\"}" | jq -e '.reactions["🔥"]|length==2' >/dev/null || fail "вторая реакция"
+curl -s -X POST $B/api/wc/react -H "Authorization: $T1" -H "$J" -d "{\"message\":\"$MID\",\"emoji\":\"🔥\"}" | jq -e ".reactions[\"🔥\"]==[\"$U2\"]" >/dev/null || fail "снять реакцию"
+code=$(curl -s -o /dev/null -w '%{http_code}' -X POST $B/api/wc/react -H "Authorization: $T3" -H "$J" -d "{\"message\":\"$MID\",\"emoji\":\"👍\"}")
+[ "$code" = "403" ] || fail "посторонний ставит реакцию ($code)"
+code=$(curl -s -o /dev/null -w '%{http_code}' -X POST $B/api/wc/react -H "Authorization: $T1" -H "$J" -d "{\"message\":\"$MID\",\"emoji\":\"<script>\"}")
+[ "$code" = "400" ] || fail "кривая реакция принята ($code)"
+E1=$(curl -s -X PATCH $B/api/collections/messages/records/$MID -H "Authorization: $T2" -H "$J" -d '{"text":"Привет!!","reactions":{"💀":["x"]}}')
+echo "$E1" | jq -e '.reactions["💀"]==null and .reactions["🔥"]!=null' >/dev/null || fail "реакции подменили правкой: $E1"
+REP=$(curl -s -X POST $B/api/collections/messages/records -H "Authorization: $T1" -H "$J" -d "{\"chat\":\"$CHAT\",\"text\":\"Ответ\",\"reply_to\":\"$MID\"}")
+[ "$(echo "$REP" | jq -r .reply_to)" = "$MID" ] || fail "ответ на сообщение: $REP"
+curl -s -o /dev/null -w '%{http_code}' -X POST $B/api/wc/typing -H "Authorization: $T1" -H "$J" -d "{\"chat\":\"$CHAT\"}" | grep -q 204 || fail "печатает…"
+curl -s -o /dev/null -X POST $B/api/wc/read -H "Authorization: $T2" -H "$J" -d "{\"chat\":\"$CHAT\"}"
+curl -s "$B/api/collections/chats/records/$CHAT" -H "Authorization: $T1" | jq -e ".reads[\"$U2\"]!=null" >/dev/null || fail "прочитано"
+curl -s -X PATCH $B/api/collections/chats/records/$CHAT -H "Authorization: $T1" -H "$J" -d "{\"reads\":{\"$U2\":\"2000-01-01 00:00:00.000Z\"}}" | jq -e ".reads[\"$U2\"]!=\"2000-01-01 00:00:00.000Z\"" >/dev/null || fail "«прочитано» подделали"
+curl -s -o /dev/null -X POST $B/api/wc/ping -H "Authorization: $T2"
+curl -s "$B/api/collections/users/records/$U2" -H "Authorization: $T1" | jq -e '.last_seen!=""' >/dev/null || fail "в сети"
+curl -s -X PATCH $B/api/collections/chats/records/$CHAT -H "Authorization: $T2" -H "$J" -d "{\"pins+\":\"$MID\"}" | jq -e ".pins==[\"$MID\"]" >/dev/null || fail "закрепить сообщение"
+ok "реакции, ответы, печатает, прочитано, в сети, закрепы"
+
+# --- Резервная копия из панели ---
+BK=$(curl -s -X POST $B/api/wc/panel/backup)
+echo "$BK" | jq -e '.name|startswith("winter_manual_")' >/dev/null || fail "резервная копия: $BK"
+curl -s $B/api/wc/panel | jq -e '.backups|length>=1' >/dev/null || fail "список копий"
+ok "резервная копия"
+
 # --- Winter Arc: очки дисциплины ---
 TODAY=$(date +%F)
 arc=$(curl -s $B/api/wc/info | jq -c .arc)

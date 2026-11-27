@@ -10,6 +10,7 @@ import 'package:path_provider/path_provider.dart';
 
 import '../api.dart';
 import '../call_controller.dart';
+import '../instant.dart';
 import '../main.dart' show buildNumber;
 import '../settings.dart';
 import '../sounds.dart';
@@ -304,6 +305,16 @@ class _AccountSectionState extends State<_AccountSection> {
           trailing: Icon(Icons.chevron_right, color: W.muted),
           onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const ProfileEditScreen())),
         ),
+        _Switch(
+          icon: Icons.circle_outlined,
+          title: 'Показывать, что я в сети',
+          subtitle: 'Друзья видят «в сети» и «был(а) 5 мин назад»',
+          value: Settings.I.showOnline,
+          onChanged: (v) {
+            Settings.I.showOnline = v;
+            if (v) Api.I.ping();
+          },
+        ),
         ListTile(
           leading: Icon(Icons.password, color: W.muted),
           title: Text('Сменить пароль', style: W.body),
@@ -483,14 +494,25 @@ class _NotifySection extends StatelessWidget {
           trailing: Icon(Icons.chevron_right, color: W.muted),
           onTap: () => _pickDnd(context),
         ),
+        _Switch(
+          icon: Icons.notifications_outlined,
+          title: 'Уведомления о сообщениях',
+          subtitle: !_android
+              ? 'Когда окно свёрнуто или не в фокусе'
+              : (s.instantNotify ? 'Сразу, когда приложение свёрнуто' : 'Когда приложение свёрнуто (Android проверяет примерно раз в 15 минут)'),
+          value: s.notify,
+          onChanged: (v) => s.notify = v,
+        ),
         if (_android) ...[
           _Switch(
-            icon: Icons.notifications_outlined,
-            title: 'Уведомления о сообщениях',
-            subtitle: 'Когда приложение свёрнуто (Android проверяет примерно раз в 15 минут)',
-            value: s.notify,
-            onChanged: (v) => s.notify = v,
+            icon: Icons.bolt_outlined,
+            title: 'Мгновенно',
+            subtitle: 'Приложение остаётся на связи с сервером. В шторке будет тихое «Winter Chat на связи» — '
+                'его можно скрыть: долгое нажатие на него → выключить этот канал.',
+            value: s.instantNotify,
+            onChanged: s.notify ? (v) => s.instantNotify = v : (_) {},
           ),
+          if (s.notify && s.instantNotify) const _BatteryTile(),
           _Switch(
             icon: Icons.volume_up_outlined,
             title: 'Звук уведомлений',
@@ -515,6 +537,53 @@ class _NotifySection extends StatelessWidget {
           onChanged: (v) => s.ringSound = v,
         ),
       ],
+    );
+  }
+}
+
+/// Подсказка: чтобы Android не усыплял приложение (иначе «мгновенно» иногда опаздывает).
+class _BatteryTile extends StatefulWidget {
+  const _BatteryTile();
+
+  @override
+  State<_BatteryTile> createState() => _BatteryTileState();
+}
+
+class _BatteryTileState extends State<_BatteryTile> with WidgetsBindingObserver {
+  bool? _ok;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _check();
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) _check();
+  }
+
+  Future<void> _check() async {
+    final ok = await Instant.batteryOk();
+    if (mounted) setState(() => _ok = ok);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_ok != false) return const SizedBox.shrink();
+    return ListTile(
+      leading: Icon(Icons.battery_alert_outlined, color: W.warn),
+      title: Text('Не усыплять Winter Chat', style: W.body),
+      subtitle: Text('Без этого Android может придержать уведомления, когда телефон долго лежит. Нажми и разреши.', style: W.small),
+      trailing: Icon(Icons.chevron_right, color: W.muted),
+      onTap: Instant.askBattery,
     );
   }
 }

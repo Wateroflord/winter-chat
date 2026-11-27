@@ -16,6 +16,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/pocketbase/dbx"
 	"github.com/pocketbase/pocketbase/apis"
 	"github.com/pocketbase/pocketbase/core"
 )
@@ -46,13 +47,18 @@ func registerRoutes(app core.App) {
 				"port":      HTTPPort,
 				"addresses": vpnAddresses(),
 				"games":     gamesInfo(),
+				"social":    1,
 			})
 		})
 
 		// Токен для входа в звонок чата.
+		registerSocialRoutes(se)
+		registerBackupPanelRoutes(se)
+
 		r.POST("/api/wc/call-token", func(e *core.RequestEvent) error {
 			var body struct {
-				Chat string `json:"chat"`
+				Chat  string `json:"chat"`
+				Quiet bool   `json:"quiet"` // голосовая комната: зайти, никому не звоня
 			}
 			if err := e.BindBody(&body); err != nil || body.Chat == "" {
 				return e.BadRequestError("Не указан чат", nil)
@@ -68,6 +74,11 @@ func registerRoutes(app core.App) {
 						msg += ": " + lastErr
 					}
 					return e.Error(http.StatusServiceUnavailable, msg, nil)
+				}
+			}
+			if body.Quiet {
+				if existing, _ := e.App.FindFirstRecordByFilter("calls", "chat = {:c}", dbx.Params{"c": chat.Id}); existing == nil {
+					setQuiet(chat.Id, true)
 				}
 			}
 			tok, err := userCallToken(e.Auth, chat.Id)
@@ -250,6 +261,9 @@ func panelData(app core.App) map[string]any {
 		"chats":         chats,
 		"messages":      msgs,
 		"dataDir":       dataDir,
+		"backups":       listBackups(app),
+		"backupsPath":   backupsDir(app),
+		"backupDir":     cfg.BackupDir,
 		"background":    background,
 		"ports": []map[string]any{
 			{"port": HTTPPort, "proto": "TCP", "what": "приложение, чаты, файлы"},

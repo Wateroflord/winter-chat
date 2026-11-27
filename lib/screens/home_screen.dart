@@ -85,6 +85,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   Future<void> _onIncoming(RecordModel call) async {
     final chatId = call.getStringValue('chat');
     if (_rungFor.contains(call.id) || CallController.I.chatId == chatId) return;
+    // Голосовая комната никому не звонит — в чате просто появляется «зайти».
+    if (call.getBoolValue('quiet')) return;
     _rungFor.add(call.id);
     final chat = Store.I.chat(chatId);
     if (chat == null || !mounted) return;
@@ -271,6 +273,8 @@ class _ChatTile extends StatelessWidget {
     final title = api.chatTitle(chat);
     final unread = api.isUnread(chat);
     final inCall = Store.I.callParticipants(chat.id).isNotEmpty;
+    final quietRoom = Store.I.calls[chat.id]?.getBoolValue('quiet') ?? false;
+    final typing = Store.I.typingIn(chat.id);
     var sub = chat.getStringValue('last_text');
     final lastAuthor = chat.getStringValue('last_author');
     if (sub.isNotEmpty && lastAuthor.isNotEmpty) {
@@ -307,6 +311,16 @@ class _ChatTile extends StatelessWidget {
                   clipBehavior: Clip.none,
                   children: [
                     avatar,
+                    if (!inCall && other != null && Api.I.isOnline(other))
+                      Positioned(
+                        right: 0,
+                        bottom: 0,
+                        child: Container(
+                          width: 13,
+                          height: 13,
+                          decoration: BoxDecoration(color: W.good, shape: BoxShape.circle, border: Border.all(color: W.bg, width: 2.5)),
+                        ),
+                      ),
                     if (inCall)
                       Positioned(
                         right: -2,
@@ -351,10 +365,14 @@ class _ChatTile extends StatelessWidget {
                         children: [
                           Expanded(
                             child: Text(
-                              inCall ? 'Идёт звонок' : sub,
+                              typing.isNotEmpty
+                                  ? (isGroup ? '${api.nameOf(typing.first)} печатает…' : 'печатает…')
+                                  : inCall
+                                      ? (quietRoom ? '🔊 Голосовая комната' : 'Идёт звонок')
+                                      : sub,
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
-                              style: TextStyle(fontSize: 13.5, color: inCall ? W.good : (unread ? W.text : W.muted)),
+                              style: TextStyle(fontSize: 13.5, color: typing.isNotEmpty ? W.ice : (inCall ? W.good : (unread ? W.text : W.muted))),
                             ),
                           ),
                           if (unread)
@@ -522,7 +540,7 @@ Widget _roundBtn(IconData icon, Color color, String label, VoidCallback onTap) {
 }
 
 /// Начать или присоединиться к звонку в чате и открыть экран звонка.
-Future<void> startCall(BuildContext context, String chatId, String title, {bool withCamera = false}) async {
+Future<void> startCall(BuildContext context, String chatId, String title, {bool withCamera = false, bool quiet = false}) async {
   final call = CallController.I;
   if (call.chatId == chatId && call.active) {
     openCallScreen(context);
@@ -530,7 +548,7 @@ Future<void> startCall(BuildContext context, String chatId, String title, {bool 
   }
   final nav = Navigator.of(context);
   final messenger = ScaffoldMessenger.maybeOf(context);
-  final joining = call.join(chatId, title, withCamera: withCamera);
+  final joining = call.join(chatId, title, withCamera: withCamera, quiet: quiet);
   nav.push(MaterialPageRoute(builder: (_) => const CallScreen()));
   try {
     await joining;

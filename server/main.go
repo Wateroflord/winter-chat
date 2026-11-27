@@ -37,7 +37,8 @@ type Config struct {
 	LKSecret      string `json:"livekitSecret"`
 	AdminEmail    string `json:"adminEmail"`
 	AdminPassword string `json:"adminPassword"`
-	ArcStart      string `json:"arcStart"` // первый день Winter Arc (ГГГГ-ММ-ДД)
+	ArcStart      string `json:"arcStart"`  // первый день Winter Arc (ГГГГ-ММ-ДД)
+	BackupDir     string `json:"backupDir"` // куда ещё класть автокопии (флешка, облачный диск)
 }
 
 var (
@@ -106,6 +107,7 @@ func main() {
 	registerHooks(app)
 	registerArcHooks(app)
 	registerGamesHooks(app)
+	registerSocialHooks(app)
 	registerRoutes(app)
 
 	lk := newLiveKit(app)
@@ -126,6 +128,9 @@ func main() {
 		if err := ensureGamesSchema(se.App); err != nil {
 			return fmt.Errorf("подготовка игр: %w", err)
 		}
+		if err := ensureSocialSchema(se.App); err != nil {
+			return fmt.Errorf("подготовка реакций и закрепов: %w", err)
+		}
 		if err := ensureSuperuser(se.App); err != nil {
 			return fmt.Errorf("создание администратора: %w", err)
 		}
@@ -135,6 +140,12 @@ func main() {
 		clearCalls(se.App)
 		cleanupGames(se.App)
 		se.App.Cron().MustAdd("winter-games-cleanup", "*/10 * * * *", func() { cleanupGames(se.App) })
+		// Автокопия базы раз в сутки (проверка каждый час — ноутбук ночью может быть выключен).
+		se.App.Cron().MustAdd("winter-backup", "23 * * * *", func() { autoBackupIfDue(se.App) })
+		go func() {
+			time.Sleep(2 * time.Minute)
+			autoBackupIfDue(se.App)
+		}()
 
 		if err := se.Next(); err != nil {
 			return err

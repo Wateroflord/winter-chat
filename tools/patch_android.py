@@ -17,6 +17,7 @@ perms = [
     "android.permission.WAKE_LOCK",
     "android.permission.FOREGROUND_SERVICE",
     "android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION",
+    "android.permission.FOREGROUND_SERVICE_REMOTE_MESSAGING",   # служба «на связи» (мгновенные уведомления)
     "android.permission.POST_NOTIFICATIONS",
     "android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS",
     "android.permission.RECEIVE_BOOT_COMPLETED",
@@ -47,6 +48,15 @@ service = (
 if "IsolateHolderService" not in t:
     t = t.replace("</application>", service + "    </application>", 1)
 
+# Служба «Winter Chat на связи» (мгновенные уведомления) — код в tools/android.
+if "KeepAliveService" not in t:
+    t = t.replace("</application>", """        <service
+            android:name=".KeepAliveService"
+            android:enabled="true"
+            android:exported="false"
+            android:foregroundServiceType="remoteMessaging" />
+    </application>""", 1)
+
 # Фоновая проверка новых сообщений (android_alarm_manager_plus).
 if "AlarmService" not in t:
     t = t.replace("</application>", """    <service
@@ -67,6 +77,14 @@ if "AlarmService" not in t:
     </application>""", 1)
 
 m.write_text(t, encoding="utf-8")
+
+# Свой код Android: служба «на связи» и канал к ней из MainActivity.
+kt_dir = ROOT / "src/main/kotlin/com/winterhub/winter_chat"
+kt_dir.mkdir(parents=True, exist_ok=True)
+for old in kt_dir.glob("MainActivity.*"):
+    old.unlink()
+for f in ("MainActivity.kt", "KeepAliveService.kt"):
+    (kt_dir / f).write_text((pathlib.Path("tools/android") / f).read_text(encoding="utf-8"), encoding="utf-8")
 
 # Правила, чтобы оптимизатор не вырезал WebRTC.
 (ROOT / "proguard-rules.pro").write_text(

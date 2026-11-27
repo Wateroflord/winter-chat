@@ -1,8 +1,11 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:media_kit/media_kit.dart';
 
 import 'api.dart';
 import 'bg_notify.dart';
+import 'instant.dart';
 import 'screens/home_screen.dart';
 import 'screens/login_screen.dart';
 import 'settings.dart';
@@ -95,10 +98,15 @@ class _RootState extends State<Root> with WidgetsBindingObserver {
     WidgetsBinding.instance.addObserver(this);
     BgNotify.setBackground(false);
     _boot();
+    // «В сети»: отмечаемся раз в минуту, пока приложение открыто.
+    _online = Timer.periodic(const Duration(seconds: 60), (_) {
+      if (!Instant.background) Api.I.ping();
+    });
   }
 
   @override
   void dispose() {
+    _online?.cancel();
     WidgetsBinding.instance.removeObserver(this);
     Api.I.removeListener(_changed);
     super.dispose();
@@ -108,8 +116,15 @@ class _RootState extends State<Root> with WidgetsBindingObserver {
   void didChangeAppLifecycleState(AppLifecycleState state) {
     // Свернули — фоновая задача начинает присылать уведомления; открыли — перестаёт.
     if (state == AppLifecycleState.paused || state == AppLifecycleState.hidden) BgNotify.setBackground(true);
-    if (state == AppLifecycleState.resumed) BgNotify.setBackground(false);
+    if (state == AppLifecycleState.resumed) {
+      BgNotify.setBackground(false);
+      Api.I.ping();
+    }
+    // Мгновенные уведомления — когда приложение свёрнуто или окно на ПК не в фокусе.
+    Instant.background = state != AppLifecycleState.resumed;
   }
+
+  Timer? _online;
 
   void _changed() {
     if (mounted) setState(() {});
@@ -120,7 +135,9 @@ class _RootState extends State<Root> with WidgetsBindingObserver {
       try {
         await Api.I.afterLogin().timeout(const Duration(seconds: 8));
       } catch (_) {}
+      Api.I.ping();
     }
+    Instant.init();
     if (mounted) setState(() => _booting = false);
   }
 

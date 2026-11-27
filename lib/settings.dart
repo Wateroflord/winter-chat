@@ -206,6 +206,72 @@ class Settings extends ChangeNotifier {
   int get ringTone => _i('set_ring_tone') ?? 0;
   set ringTone(int v) => _setI('set_ring_tone', v);
 
+  /// Показывать друзьям, что я в сети.
+  bool get showOnline => _b('set_show_online', true);
+  set showOnline(bool v) => _setB('set_show_online', v);
+
+  /// Android: держать связь с сервером, чтобы уведомления приходили сразу.
+  static const kInstant = 'set_instant';
+  bool get instantNotify => _b(kInstant, true);
+  set instantNotify(bool v) => _setB(kInstant, v);
+
+  // ---------- обмен темой с друзьями ----------
+
+  static const themePrefix = 'WINTERTHEME:';
+
+  /// Код текущего оформления: можно отправить другу, и у него будет так же.
+  String exportTheme() {
+    final wp = wallpaper;
+    final j = <String, dynamic>{
+      'v': 1,
+      'p': palette.id,
+      'a': accent.toARGB32(),
+      'bs': bubbleStyle,
+      'br': bubbleRadius.round(),
+      if (myBubbleColor != null) 'mb': myBubbleColor!.toARGB32(),
+      if (myBubbleGradient) 'mg': 1,
+      if (otherBubbleColor != null) 'ob': otherBubbleColor!.toARGB32(),
+      if (squareAvatars) 'sa': 1,
+      // Своё фото в код не влезет — вместо него без фона.
+      'wp': wp.kind == 3 ? const Wallpaper.none().toJson() : wp.toJson(),
+    };
+    return themePrefix + base64Url.encode(utf8.encode(jsonEncode(j))).replaceAll('=', '');
+  }
+
+  /// Разобрать код темы. null — это не код темы.
+  static Map<String, dynamic>? parseTheme(String code) {
+    final i = code.indexOf(themePrefix);
+    if (i < 0) return null;
+    var b = code.substring(i + themePrefix.length).trim().split(RegExp(r'\s')).first;
+    b = b.replaceAll(RegExp(r'[^A-Za-z0-9_\-]'), '');
+    while (b.length % 4 != 0) {
+      b += '=';
+    }
+    try {
+      final j = jsonDecode(utf8.decode(base64Url.decode(b)));
+      if (j is Map<String, dynamic> && j['p'] is String && j['a'] is int) return j;
+    } catch (_) {}
+    return null;
+  }
+
+  /// Применить тему из кода. false — код не подошёл.
+  Future<bool> importTheme(String code) async {
+    final j = parseTheme(code);
+    if (j == null) return false;
+    int? i(String k) => j[k] is int ? j[k] as int : null;
+    await _p.setString('set_palette', paletteById(j['p'] as String).id);
+    await _p.setInt('set_accent_color', j['a'] as int);
+    await _p.setInt('set_bubble_style', (i('bs') ?? 0).clamp(0, bubbleStyles.length - 1));
+    await _p.setDouble('set_bubble_radius', (i('br') ?? 16).clamp(6, 26).toDouble());
+    i('mb') == null ? await _p.remove('set_my_bubble') : await _p.setInt('set_my_bubble', i('mb')!);
+    await _p.setBool('set_my_bubble_grad', i('mg') == 1);
+    i('ob') == null ? await _p.remove('set_other_bubble') : await _p.setInt('set_other_bubble', i('ob')!);
+    await _p.setBool('set_square_avatars', i('sa') == 1);
+    if (j['wp'] is Map) await _p.setString('set_wallpaper', Wallpaper.fromJson(j['wp'] as Map).encode());
+    notifyListeners();
+    return true;
+  }
+
   /// Подпись темы — меняется, когда надо перекрасить приложение.
   String get themeKey => '${palette.id}|${accent.toARGB32()}';
 

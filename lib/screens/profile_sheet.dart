@@ -153,7 +153,10 @@ class _ProfileViewState extends State<_ProfileView> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(api.nameOf(id), style: W.h1.copyWith(color: nameColorFor(id))),
-                  Text('@${u?.getStringValue('username') ?? ''}', style: W.small),
+                  Text(
+                    ['@${u?.getStringValue('username') ?? ''}', if (!me) api.lastSeenText(id)].where((x) => x.isNotEmpty).join(' · '),
+                    style: W.small.copyWith(color: !me && api.isOnline(id) ? W.good : null),
+                  ),
                   if (status != null) ...[
                     const SizedBox(height: 12),
                     Container(

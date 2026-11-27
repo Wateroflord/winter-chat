@@ -92,12 +92,22 @@
     </div>
 
     <div class="card full">
+      <h2>Резервные копии</h2>
+      <div class="muted">Сервер сам копирует базу и файлы раз в сутки и хранит 7 последних копий. Если ноутбук сломается — переписка не пропадёт, если копии лежат ещё и на флешке или облачном диске.</div>
+      <div class="row"><span>Где лежат</span><span class="mono muted" id="bPath"></span></div>
+      <div class="row"><span>Ещё класть копии в папку</span><span><input id="bDir" placeholder="например D:\Копии Winter Chat" style="width:280px;padding:6px 8px;border-radius:8px;border:1px solid #2a3a5a;background:#0d1628;color:inherit"> <button onclick="saveBackupDir()">Сохранить</button></span></div>
+      <table style="margin-top:8px"><thead><tr><th>Копия</th><th>Когда</th><th>Размер</th></tr></thead><tbody id="backups"></tbody></table>
+      <div class="muted" id="noBackups"></div>
+      <div style="margin-top:10px"><button onclick="backupNow()" id="bNow">Сделать копию сейчас</button> <button onclick="openBackups()">Открыть папку</button></div>
+      <div class="muted" style="margin-top:8px">Восстановить: «Админка базы» ниже → Settings → Backups → у нужной копии «Restore».</div>
+    </div>
+
+    <div class="card full">
       <h2>Для продвинутых</h2>
       <div class="row"><span>Админка базы</span><a href="/_/" target="_blank">открыть</a></div>
       <div class="row"><span>Логин админки</span><span class="mono" id="aEmail"></span></div>
       <div class="row"><span>Пароль админки</span><span class="mono" id="aPass"></span></div>
       <div class="row"><span>Папка с данными</span><span class="mono muted" id="dataDir"></span></div>
-      <div class="muted" style="margin-top:8px">Чтобы сделать резервную копию — скопируй папку с данными, когда сервер выключен.</div>
     </div>
   </div>
 </div>
@@ -131,7 +141,26 @@ async function load() {
   $('users').innerHTML = (s.users || []).map(u => `<tr><td class="mono">${esc(u.username)}</td><td>${esc(u.name)}</td><td class="muted">${esc((u.created||'').slice(0,16))}</td><td><button onclick="resetPass('${esc(u.id)}','${esc(u.username)}')">Сменить пароль</button></td></tr>`).join('');
   $('noUsers').textContent = (s.users || []).length ? '' : 'Пока никто не зарегистрировался.';
   $('aEmail').textContent = s.adminEmail; $('aPass').textContent = s.adminPassword; $('dataDir').textContent = s.dataDir;
+  $('bPath').textContent = s.backupsPath || '';
+  if (document.activeElement !== $('bDir')) $('bDir').value = s.backupDir || '';
+  const mb = n => (n / 1048576).toFixed(n > 10485760 ? 0 : 1) + ' МБ';
+  $('backups').innerHTML = (s.backups || []).map(b => `<tr><td class="mono">${esc(b.name)}</td><td class="muted">${esc(b.time)}</td><td>${mb(b.size)}</td></tr>`).join('');
+  $('noBackups').textContent = (s.backups || []).length ? '' : 'Копий пока нет — первая появится через пару минут после запуска.';
 }
+async function backupNow() {
+  $('bNow').disabled = true; $('bNow').textContent = 'Копирую…';
+  try {
+    const r = await fetch('/api/wc/panel/backup', {method:'POST'});
+    const j = await r.json(); if (!r.ok) alert(j.message || 'Не удалось');
+  } catch (e) { alert('Не удалось: ' + e); }
+  $('bNow').disabled = false; $('bNow').textContent = 'Сделать копию сейчас'; load();
+}
+async function saveBackupDir() {
+  const r = await fetch('/api/wc/panel/backup-dir', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({dir: $('bDir').value})});
+  const j = await r.json(); if (!r.ok) alert(j.message || 'Не удалось'); else alert(j.dir ? 'Копии будут ещё и в ' + j.dir : 'Дополнительная папка выключена');
+  load();
+}
+async function openBackups() { await fetch('/api/wc/panel/open-backups', {method:'POST'}); }
 async function newInvite() {
   if (!confirm('Сделать новый код? Старый перестанет работать (уже зарегистрированных это не касается).')) return;
   await fetch('/api/wc/panel/invite', {method:'POST'}); load();

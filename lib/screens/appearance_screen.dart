@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../settings.dart';
 import '../sounds.dart';
@@ -267,6 +268,34 @@ class _AppearanceScreenState extends State<AppearanceScreen> {
                     Sounds.previewRing(v);
                   },
                 ),
+                _Header('ПОДЕЛИТЬСЯ ТЕМОЙ'),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  child: Text('Скопируй код и отправь другу в чат — у него появится кнопка «Применить». Своё фото фона в код не попадает.', style: W.small),
+                ),
+                const SizedBox(height: 8),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  child: Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      OutlinedButton.icon(
+                        onPressed: () async {
+                          await Clipboard.setData(ClipboardData(text: s.exportTheme()));
+                          if (context.mounted) toast(context, 'Код темы скопирован — вставь его в чат другу');
+                        },
+                        icon: const Icon(Icons.copy),
+                        label: const Text('Скопировать код темы'),
+                      ),
+                      OutlinedButton.icon(
+                        onPressed: () => _importTheme(context),
+                        icon: const Icon(Icons.download_outlined),
+                        label: const Text('Применить код'),
+                      ),
+                    ],
+                  ),
+                ),
                 _Header('ПРОФИЛЬ'),
                 ListTile(
                   leading: Icon(Icons.badge_outlined, color: W.muted),
@@ -282,6 +311,31 @@ class _AppearanceScreenState extends State<AppearanceScreen> {
       ),
     );
   }
+}
+
+Future<void> _importTheme(BuildContext context) async {
+  final clip = (await Clipboard.getData(Clipboard.kTextPlain))?.text ?? '';
+  if (!context.mounted) return;
+  final c = TextEditingController(text: Settings.parseTheme(clip) != null ? clip : '');
+  final code = await showDialog<String>(
+    context: context,
+    builder: (ctx) => AlertDialog(
+      title: const Text('Код темы'),
+      content: TextField(
+        controller: c,
+        autofocus: true,
+        maxLines: 3,
+        decoration: const InputDecoration(hintText: 'WINTERTHEME:…'),
+      ),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Отмена')),
+        FilledButton(onPressed: () => Navigator.pop(ctx, c.text), child: const Text('Применить')),
+      ],
+    ),
+  );
+  if (code == null) return;
+  final ok = await Settings.I.importTheme(code);
+  if (context.mounted) toast(context, ok ? 'Тема применена ✨' : 'Это не код темы Winter Chat');
 }
 
 class _Header extends StatelessWidget {

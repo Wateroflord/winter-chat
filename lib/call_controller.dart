@@ -53,7 +53,7 @@ class CallController extends ChangeNotifier {
       };
   bool get isDesktop => !kIsWeb && (Platform.isWindows || Platform.isLinux || Platform.isMacOS);
 
-  Future<void> join(String chatId, String title, {bool withCamera = false}) async {
+  Future<void> join(String chatId, String title, {bool withCamera = false, bool quiet = false}) async {
     if (this.chatId == chatId && room != null) return;
     if (active) await leave();
     this.chatId = chatId;
@@ -63,7 +63,7 @@ class CallController extends ChangeNotifier {
     notifyListeners();
     Room? r;
     try {
-      final t = await Api.I.callToken(chatId);
+      final t = await Api.I.callToken(chatId, quiet: quiet);
       final s = Settings.I;
       r = Room(
         roomOptions: RoomOptions(

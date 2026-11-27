@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 import 'package:pocketbase/pocketbase.dart';
@@ -29,6 +30,42 @@ class Store extends ChangeNotifier {
 
   final List<UnsubscribeFunc> _unsubs = [];
   Timer? _timer;
+  Timer? _typingTimer;
+
+  /// Кто сейчас печатает: чат → человек → когда пришёл сигнал.
+  final Map<String, Map<String, DateTime>> _typing = {};
+  static const typingTtl = Duration(seconds: 6);
+
+  /// Кто печатает в чате прямо сейчас (кроме меня).
+  List<String> typingIn(String chatId) {
+    final now = DateTime.now();
+    final m = _typing[chatId];
+    if (m == null) return const [];
+    return [
+      for (final e in m.entries)
+        if (now.difference(e.value) < typingTtl && e.key != Api.I.myId) e.key,
+    ];
+  }
+
+  void _onTyping(String chat, String user) {
+    _typing.putIfAbsent(chat, () => {})[user] = DateTime.now();
+    notifyListeners();
+    _typingTimer ??= Timer.periodic(const Duration(seconds: 2), (_) {
+      final now = DateTime.now();
+      var changed = false;
+      for (final m in _typing.values) {
+        final before = m.length;
+        m.removeWhere((_, t) => now.difference(t) >= typingTtl);
+        if (m.length != before) changed = true;
+      }
+      _typing.removeWhere((_, m) => m.isEmpty);
+      if (_typing.isEmpty) {
+        _typingTimer?.cancel();
+        _typingTimer = null;
+      }
+      if (changed) notifyListeners();
+    });
+  }
 
   PocketBase get _pb => Api.I.pb;
 
@@ -104,6 +141,7 @@ class Store extends ChangeNotifier {
           final at = r.getStringValue('last_at');
           final was = before?.getStringValue('last_at') ?? '';
           if (at.isNotEmpty && at.compareTo(was) > 0 && r.getStringValue('last_author') != Api.I.myId) {
+            _typing[r.id]?.remove(r.getStringValue('last_author')); // написал — уже не печатает
             _newMessages.add(r.id);
           }
         }
@@ -126,6 +164,15 @@ class Store extends ChangeNotifier {
         }
         notifyListeners();
       }));
+      // «Печатает…» — сервер присылает только участникам чата.
+      try {
+        _unsubs.add(await _pb.realtime.subscribe('wc_typing', (e) {
+          try {
+            final j = jsonDecode(e.data);
+            if (j is Map && j['chat'] is String && j['user'] is String) _onTyping(j['chat'] as String, j['user'] as String);
+          } catch (_) {}
+        }));
+      } catch (_) {}
       _unsubs.add(await _pb.collection('users').subscribe('*', (e) {
         final r = e.record;
         if (r == null) return;
