@@ -186,10 +186,13 @@ BD=$(curl -s -X POST $B/api/collections/boards/records -H "Authorization: $T1" -
 BID=$(echo "$BD" | jq -r .id)
 [ "$(echo "$BD" | jq -r .owner)" = "$U1" ] || fail "хозяин доски: $BD"
 echo "$BD" | jq -e --arg u "$U1" '.members|index($u)' >/dev/null || fail "хозяин не в участниках: $BD"
-n=$(curl -s "$B/api/collections/boards/records" -H "Authorization: $T2" | jq '.items|length')
-[ "$n" = "1" ] || fail "участник не видит доску ($n)"
+R=$(curl -s "$B/api/collections/boards/records" -H "Authorization: $T2")
+n=$(echo "$R" | jq '.items|length')
+[ "$n" = "1" ] || fail "участник не видит доску ($n): $R"
 n=$(curl -s "$B/api/collections/boards/records" -H "Authorization: $T3" | jq '.items|length')
 [ "$n" = "0" ] || fail "посторонний видит доску ($n)"
+R=$(curl -s "$B/api/collections/boards/records/$BID" -H "Authorization: $T2")
+echo "$R" | jq -e '.name=="FalseMemory"' >/dev/null || fail "участник не открыл доску: $R"
 TK=$(curl -s -X POST $B/api/collections/board_tasks/records -H "Authorization: $T2" -H "$J" -d "{\"board\":\"$BID\",\"title\":\"Сделать меню\",\"status\":\"todo\"}" | tee /dev/stderr)
 TID=$(echo "$TK" | jq -r .id)
 [ "$(echo "$TK" | jq -r .author)" = "$U2" ] || fail "автор задачи: $TK"
