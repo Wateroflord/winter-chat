@@ -66,15 +66,6 @@ Future<void> waitUntil(WidgetTester t, bool Function() cond, {int seconds = 25, 
 /// Долгое нажатие на сообщение, пока не откроется меню (с диагностикой).
 Future<void> openMenu(WidgetTester t, Finder target, String name) async {
   for (var attempt = 1; attempt <= 4; attempt++) {
-    // Диагностика: что лежит под пальцем и не крутится ли список.
-    final at = t.getCenter(target);
-    final hit = HitTestResult();
-    t.binding.hitTestInView(hit, at, t.view.viewId);
-    final scrolls = find.byType(Scrollable).evaluate().map((e) => (e as StatefulElement).state as ScrollableState);
-    // ignore: avoid_print
-    print('HIT $name#$attempt @$at: ${hit.path.take(40).map((e) => e.target.runtimeType).join(' < ')}');
-    // ignore: avoid_print
-    print('SCROLLING $name#$attempt: ${scrolls.map((s) => s.position.isScrollingNotifier.value).toList()}');
     await t.longPress(target);
     for (var i = 0; i < 20; i++) {
       await t.pump(const Duration(milliseconds: 100));
@@ -91,7 +82,11 @@ Future<void> openMenu(WidgetTester t, Finder target, String name) async {
 }
 
 void main() {
-  IntegrationTestWidgetsFlutterBinding.ensureInitialized();
+  final binding = IntegrationTestWidgetsFlutterBinding.ensureInitialized();
+  // Когда открывается меню, навигатор отменяет касание, которое ещё держит палец.
+  // На телефоне эта отмена приходит сама, а в тесте её надо пропускать явно —
+  // иначе долгое нажатие на это сообщение «залипает».
+  binding.shouldPropagateDevicePointerEvents = true;
   hierarchicalLoggingEnabled = true;
   setLoggingLevel(LoggerLevel.kINFO);
   Logger('livekit').onRecord.listen((r) {
@@ -154,14 +149,7 @@ void main() {
     // Меню закрывается с анимацией — ждём, пока оно уйдёт совсем.
     await waitUntil(t, () => find.byType(BottomSheet).evaluate().isEmpty, what: 'меню закрылось');
     await t.pump(const Duration(milliseconds: 400));
-    debugPrintGestureArenaDiagnostics = true;
-    debugPrintRecognizerCallbacksTrace = true;
-    try {
-      await openMenu(t, inChat('Привет, Алиса!'), 'второе');
-    } finally {
-      debugPrintGestureArenaDiagnostics = false;
-      debugPrintRecognizerCallbacksTrace = false;
-    }
+    await openMenu(t, inChat('Привет, Алиса!'), 'второе');
     await t.tap(find.text('Ответить'));
     await waitUntil(t, () => find.byType(BottomSheet).evaluate().isEmpty, what: 'меню закрылось');
     await t.pump(const Duration(milliseconds: 400));
