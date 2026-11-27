@@ -200,6 +200,17 @@ ThemeData buildTheme({Color? accent}) {
     onSurface: W.text,
     error: W.bad,
     outline: W.border,
+    outlineVariant: W.border,
+    onSurfaceVariant: W.muted,
+    primaryContainer: W.iceDeep,
+    onPrimaryContainer: W.text,
+    secondaryContainer: W.iceDeep,
+    onSecondaryContainer: W.text,
+    surfaceContainerLowest: W.bg,
+    surfaceContainerLow: W.surface,
+    surfaceContainer: W.surface,
+    surfaceContainerHigh: W.surface2,
+    surfaceContainerHighest: W.surface3,
   );
   final border = OutlineInputBorder(
     borderRadius: BorderRadius.circular(14),

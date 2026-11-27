@@ -51,6 +51,10 @@ class _WinterChatAppState extends State<WinterChatApp> {
     // Тема, пузыри, аватары — всё читается при построении, поэтому перестраиваем всё дерево.
     rebuildAll(context);
     setState(() {});
+    // И ещё раз после кадра: виджеты, которые берут цвета из темы, уже видят новую.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) rebuildAll(context);
+    });
   }
 
   @override
@@ -59,6 +63,8 @@ class _WinterChatAppState extends State<WinterChatApp> {
       title: 'Winter Chat',
       debugShowCheckedModeBanner: false,
       theme: buildTheme(),
+      // Без плавного перехода темы: иначе часть значков запоминала старые цвета.
+      themeAnimationDuration: Duration.zero,
       navigatorKey: navigatorKey,
       builder: (context, child) {
         final mq = MediaQuery.of(context);
