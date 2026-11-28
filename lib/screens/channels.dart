@@ -4,7 +4,6 @@ import 'package:pocketbase/pocketbase.dart';
 import '../api.dart';
 import '../store.dart';
 import '../theme.dart';
-import '../util.dart';
 import 'chat_screen.dart';
 import 'home_screen.dart';
 

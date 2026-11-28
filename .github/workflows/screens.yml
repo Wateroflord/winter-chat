@@ -76,6 +76,7 @@ jobs:
                 api /api/wc/react "{\"message\":\"$M\",\"emoji\":\"🔥\"}"
                 api /api/wc/read "{\"chat\":\"$CH\"}"
                 api /api/wc/ping '{}'
+                curl -s -X POST "$B/api/collections/messages/records" -H "Authorization: $TB" -F "chat=$CH" --form-string 'text=@alice ты тут? Глянь **это**' > /dev/null
                 for j in $(seq 1 30); do api /api/wc/typing "{\"chat\":\"$CH\"}"; sleep 2; done
                 exit 0
               fi

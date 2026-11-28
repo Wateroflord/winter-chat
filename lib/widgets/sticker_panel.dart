@@ -8,7 +8,6 @@ import 'package:pocketbase/pocketbase.dart';
 
 import '../api.dart';
 import '../theme.dart';
-import '../util.dart';
 
 /// Свои стикеры (видны всем друзьям на сервере) и поиск GIF.
 

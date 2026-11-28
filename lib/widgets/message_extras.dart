@@ -3,7 +3,6 @@ import 'package:pocketbase/pocketbase.dart';
 
 import '../api.dart';
 import '../theme.dart';
-import '../util.dart';
 import 'sticker_panel.dart';
 
 /// Опросы, превью ссылок, стикеры, GIF, «переслано» и «напоминание» внутри сообщения.

@@ -1,6 +1,7 @@
 // Проверка приложения на настоящем сервере: регистрация, чат, сообщение, звонок.
 // Запускается в GitHub Actions (screens.yml) на Linux с виртуальным экраном.
 import 'dart:io';
+import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'package:flutter/gestures.dart';
@@ -13,6 +14,7 @@ import 'package:logging/logging.dart';
 import 'package:winter_chat/api.dart';
 import 'package:winter_chat/call_controller.dart';
 import 'package:winter_chat/main.dart' as app;
+import 'package:winter_chat/outbox.dart';
 import 'package:winter_chat/screens/appearance_screen.dart';
 import 'package:winter_chat/screens/call_screen.dart';
 import 'package:winter_chat/screens/chat_screen.dart';
@@ -22,6 +24,7 @@ import 'package:winter_chat/settings.dart';
 import 'package:winter_chat/store.dart';
 import 'package:winter_chat/theme.dart';
 import 'package:winter_chat/widgets/chat_background.dart';
+import 'package:winter_chat/widgets/sticker_panel.dart';
 
 const server = String.fromEnvironment('SERVER', defaultValue: '127.0.0.1:8090');
 const invite = String.fromEnvironment('INVITE');
@@ -61,6 +64,31 @@ Future<void> waitUntil(WidgetTester t, bool Function() cond, {int seconds = 25, 
   }
   await shot(t, 'timeout');
   fail('Не дождался: $what');
+}
+
+/// Ждать, но без провала теста (для того, что зависит от интернета).
+Future<bool> softWait(WidgetTester t, Finder f, {int seconds = 20}) async {
+  final end = DateTime.now().add(Duration(seconds: seconds));
+  while (DateTime.now().isBefore(end)) {
+    await t.pump(const Duration(milliseconds: 100));
+    if (f.evaluate().isNotEmpty) return true;
+    await t.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 250)));
+  }
+  return false;
+}
+
+/// Всё из очереди отправки ушло на сервер.
+Future<void> allSent(WidgetTester t) => waitUntil(t, () => Outbox.I.items.isEmpty, what: 'отправка сообщения (${Outbox.I.items.map((i) => i.error).join(', ')})');
+
+/// Картинка для стикера (рисуем прямо в тесте).
+Future<Uint8List> stickerPng() async {
+  final rec = ui.PictureRecorder();
+  final c = Canvas(rec);
+  c.drawCircle(const Offset(64, 64), 58, Paint()..color = const Color(0xFF5B9DFF));
+  c.drawCircle(const Offset(64, 64), 30, Paint()..color = const Color(0xFFFFFFFF));
+  final img = await rec.endRecording().toImage(128, 128);
+  final data = await img.toByteData(format: ui.ImageByteFormat.png);
+  return data!.buffer.asUint8List();
 }
 
 /// Долгое нажатие на сообщение, пока не откроется меню (с диагностикой).
@@ -138,6 +166,8 @@ void main() {
     await waitFor(t, find.text('🔥 1'), seconds: 30, what: 'реакция Боба 🔥');
     await waitFor(t, find.byIcon(Icons.done_all), seconds: 30, what: '✓✓ — Боб прочитал');
     await waitFor(t, find.text('печатает…'), seconds: 30, what: '«печатает…» от Боба');
+    // Боб позвал меня: упоминание подсвечено, **это** — жирным.
+    await waitFor(t, find.text('@alice ты тут? Глянь это'), seconds: 30, what: 'упоминание от Боба');
     await shot(t, '05a_read_typing');
 
     // --- своя реакция и ответ с цитатой ---
@@ -157,6 +187,8 @@ void main() {
     await t.pump(const Duration(milliseconds: 200));
     await t.tap(find.byIcon(Icons.send_rounded));
     await waitFor(t, find.text('Отвечаю с цитатой'), what: 'ответ с цитатой');
+    await allSent(t);
+    await t.pump(const Duration(milliseconds: 400));
     // Цитата: имя автора и текст исходного сообщения внутри ответа.
     expect(inChat('Привет, Алиса!'), findsAtLeastNWidgets(2));
 
@@ -183,6 +215,85 @@ void main() {
     app.navigatorKey.currentState!.pop();
     await t.pump(const Duration(milliseconds: 500));
 
+    // --- оформление текста ---
+    await t.enterText(composer, '**Жирный**, _курсив_ и ||спойлер|| для @bob');
+    await t.pump(const Duration(milliseconds: 200));
+    await t.tap(find.byIcon(Icons.send_rounded));
+    await allSent(t);
+    await waitFor(t, find.text('Жирный, курсив и спойлер для @bob'), what: 'сообщение с оформлением');
+
+    // --- опрос ---
+    await t.tap(find.byTooltip('Прикрепить'));
+    await waitFor(t, find.text('Опрос'), what: 'меню вложений');
+    await t.tap(find.text('Опрос'));
+    await waitFor(t, find.text('Новый опрос'), what: 'окно опроса');
+    final pf = find.descendant(of: find.byType(AlertDialog), matching: find.byType(TextField));
+    await t.enterText(pf.at(0), 'Во сколько играем?');
+    await t.enterText(pf.at(1), '19:00');
+    await t.enterText(pf.at(2), '20:00');
+    await t.tap(find.text('Отправить'));
+    await allSent(t);
+    await waitFor(t, find.text('20:00'), what: 'опрос в чате');
+    await t.tap(find.text('20:00'));
+    await waitFor(t, find.text('100% · 1'), what: 'голос в опросе');
+    await shot(t, '05f_format_poll');
+
+    // --- превью ссылки (сервер сам ходит на сайт — нужен интернет) ---
+    await t.enterText(composer, 'Глянь https://example.com');
+    await t.pump(const Duration(milliseconds: 200));
+    await t.tap(find.byIcon(Icons.send_rounded));
+    await allSent(t);
+    if (await softWait(t, find.text('Example Domain'), seconds: 25)) {
+      await shot(t, '05g_link_preview');
+    } else {
+      // ignore: avoid_print
+      print('WARN превью ссылки не пришло (нет интернета у сервера?)');
+    }
+
+    // --- свой стикер и вкладка GIF ---
+    final png = await t.runAsync(stickerPng);
+    await t.runAsync(() => StickerStore.I.upload(pack: 'Снежинки', name: 'snow.png', bytes: png!));
+    await t.tap(find.byTooltip('Стикеры и GIF'));
+    final stickerImg = find.descendant(of: find.byType(StickerPanel), matching: find.byType(Image));
+    await waitFor(t, stickerImg, what: 'стикер в панели');
+    await t.tap(stickerImg.first);
+    await allSent(t);
+    await t.tap(find.text('GIF'));
+    await waitFor(t, find.textContaining('Поиск GIF на сервере выключен'), what: 'вкладка GIF без ключа');
+    await shot(t, '05h_stickers');
+    await t.tap(find.byTooltip('Стикеры и GIF'));
+    await t.pump(const Duration(milliseconds: 300));
+
+    // --- группа с каналами, пересылка, напоминание ---
+    final bobId = Api.I.users.keys.firstWhere((id) => id != Api.I.myId);
+    final group = await t.runAsync(() => Store.I.createGroup('Банда', [bobId]));
+    final members = group!.getListValue<String>('members');
+    final games = await t.runAsync(() => Api.I.pb.collection('chats').create(body: {'name': 'игры', 'is_group': true, 'parent': group.id, 'members': members}));
+    final voiceCh = await t.runAsync(() => Api.I.pb.collection('chats').create(body: {'name': 'Катка', 'is_group': true, 'parent': group.id, 'kind': 'voice', 'members': members}));
+    Store.I.replaceChat(games!);
+    Store.I.replaceChat(voiceCh!);
+    await openMenu(t, inChat('Привет, Алиса!'), 'переслать');
+    await t.tap(find.text('Переслать'));
+    await waitFor(t, find.text('Банда › #игры'), what: 'канал в списке пересылки');
+    await t.tap(find.text('Банда › #игры'));
+    await t.pump(const Duration(milliseconds: 200));
+    await t.tap(find.text('Отправить'));
+    await waitFor(t, find.text('Переслано ✓'), what: 'пересылка');
+    app.navigatorKey.currentState!.push(MaterialPageRoute(builder: (_) => ChatScreen(chatId: group.id)));
+    await waitFor(t, find.text('общий'), what: 'полоска каналов');
+    await t.tap(find.text('игры'));
+    await waitFor(t, find.textContaining('Переслано от'), what: 'пересланное в канале');
+    await t.runAsync(() => Api.I.pb.collection('scheduled').create(body: {
+          'chat': games.id,
+          'text': 'Катка в 20:00 — заходите!',
+          'at': DateTime.now().add(const Duration(seconds: 2)).toUtc().toIso8601String(),
+          'remind': true,
+        }));
+    await waitFor(t, find.text('⏰ Напоминание'), seconds: 40, what: 'напоминание от сервера');
+    await shot(t, '05i_channels_forward_remind');
+    app.navigatorKey.currentState!.pop();
+    await t.pump(const Duration(milliseconds: 600));
+
     // --- звонок ---
     await t.tap(find.byTooltip('Аудиозвонок'));
     await waitUntil(t, () => CallController.I.room != null, seconds: 40, what: 'подключение к звонку (${CallController.I.error})');
@@ -190,6 +301,20 @@ void main() {
     final chatId = CallController.I.chatId!;
     await waitUntil(t, () => Store.I.callParticipants(chatId).isNotEmpty, seconds: 20, what: 'сервер видит участника звонка');
     await shot(t, '06_call');
+
+    // --- рация и саундборд ---
+    await t.tap(find.text('Рация'));
+    await waitUntil(t, () => Settings.I.pttEnabled && !CallController.I.micOn, what: 'рация: микрофон молчит');
+    await waitFor(t, find.textContaining('Держи'), what: 'кнопка рации');
+    await shot(t, '06a_ptt');
+    await t.tap(find.text('Звуки'));
+    await waitFor(t, find.text('Саундборд'), what: 'панель саундборда');
+    await t.pump(const Duration(milliseconds: 600));
+    await shot(t, '06b_soundboard');
+    app.navigatorKey.currentState!.pop();
+    await t.pump(const Duration(milliseconds: 400));
+    await CallController.I.setPtt(false);
+    await t.pump(const Duration(milliseconds: 300));
 
     await t.tap(find.descendant(of: find.byType(CallScreen), matching: find.byIcon(Icons.call_end)));
     await waitUntil(t, () => !CallController.I.active, what: 'завершение звонка');

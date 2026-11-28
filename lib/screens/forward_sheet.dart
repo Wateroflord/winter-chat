@@ -4,7 +4,6 @@ import 'package:pocketbase/pocketbase.dart';
 import '../api.dart';
 import '../store.dart';
 import '../theme.dart';
-import '../util.dart';
 import '../widgets/avatar.dart';
 
 /// Переслать сообщение в другие чаты (до 10 сразу).
