@@ -1,0 +1,62 @@
+
+Building Linux application...                                   
+download: https://github.com/webrtc-sdk/libwebrtc/releases/download/libwebrtc.m150.7871.07/libwebrtc-linux-x64-release.zip
+CMake Warning (deprecated) at flutter/ephemeral/.plugin_symlinks/media_kit_libs_linux/linux/CMakeLists.txt:95 (make_directory):
+  The 'make_directory' command has been superseded.  Use
+  'file(MAKE_DIRECTORY)' instead.
+This warning is for project developers.  Use -Wno-author or -Wno-deprecated
+to suppress it.
+
+✓ Built build/linux/x64/debug/bundle/winter_chat
+LK INFO Connectivity changed, [ConnectivityResult.other] => [ConnectivityResult.other]
+LK INFO ping config timeout: 15, interval: 5 
+LK INFO connection setup took 389 ms
+LK WARNING Unknown DC label: _data_track
+LK INFO [Preconnect audio] reset
+LK INFO [Preconnect audio] reset
+LK INFO [Preconnect audio] reset
+LK INFO [Preconnect audio] disposed
+LK WARNING failed to emit event LocalTrackUnpublishedEvent(participant: LocalParticipant(sid: PA_xkbVkSQbZNN2, identity: 76lqdq2pa11iur8), publication: LocalTrackPublication<LocalAudioTrack>(sid: TR_AMPZFLYSTBesXJ, source: TrackSource.microphone)) on a disposed emitter
+LK WARNING failed to emit event LocalTrackUnpublishedEvent(participant: LocalParticipant(sid: PA_xkbVkSQbZNN2, identity: 76lqdq2pa11iur8), publication: LocalTrackPublication<LocalAudioTrack>(sid: TR_AMPZFLYSTBesXJ, source: TrackSource.microphone)) on a disposed emitter
+LK INFO [Preconnect audio] reset
+LK WARNING failed to emit event RoomDisconnectedEvent(reason: DisconnectReason.clientInitiated) on a disposed emitter
+LK WARNING called notifyListeners() on a disposed ChangeNotifier
+LK WARNING called removeListener() on a disposed ChangeNotifier
+::group::✅ Passing tests
+✅ регистрация, чат, сообщение, звонок
+media_kit: NativeReferenceHolder: Allocated 108834102463520
+SHOT 01_login
+SHOT 02_register
+SHOT 03_home_empty
+SHOT 04_new_chat
+SHOT 05_chat
+SHOT 05a_read_typing
+MENU первое: попытка 1
+SHOT 05b_menu
+MENU второе: попытка 1
+SHOT 05c_context_menu
+SHOT 05d_reply_pin
+SHOT 05e_search
+SHOT 05f_format_poll
+SHOT 05g_link_preview
+SHOT 05h_stickers
+MENU переслать: попытка 1
+SHOT 05i_channels_forward_remind
+SHOT 06_call
+SHOT 06a_ptt
+SHOT 06b_soundboard
+Got exception closing data channel on RTCPeerConnection::dispose: PlatformException(dataChannelCloseFailed, dataChannelClose() peerConnection is null, null, null)
+Got exception closing data channel on RTCPeerConnection::dispose: PlatformException(dataChannelCloseFailed, dataChannelClose() peerConnection is null, null, null)
+Got exception closing data channel on RTCPeerConnection::dispose: PlatformException(dataChannelCloseFailed, dataChannelClose() peerConnection is null, null, null)
+Got exception closing data channel on RTCPeerConnection::dispose: PlatformException(dataChannelCloseFailed, dataChannelClose() peerConnection is null, null, null)
+Got exception closing data channel on RTCPeerConnection::dispose: PlatformException(dataChannelCloseFailed, dataChannelClose() peerConnection is null, null, null)
+SHOT 07_after_call
+SHOT 08_profile
+SHOT 09_light_theme
+SHOT 10_list_style
+SHOT 11_appearance
+SHOT 12_profile_edit
+ALL UI CHECKS PASSED
+::endgroup::
+
+🎉 1 test passed.
