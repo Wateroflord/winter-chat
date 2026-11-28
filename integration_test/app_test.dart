@@ -303,7 +303,8 @@ void main() {
     await waitFor(t, find.text('⏰ Напоминание'), seconds: 40, what: 'напоминание от сервера');
     await shot(t, '05i_channels_forward_remind');
     app.navigatorKey.currentState!.pop();
-    await t.pump(const Duration(milliseconds: 600));
+    await waitUntil(t, () => find.byType(ChatScreen).evaluate().length == 1, what: 'вернулись в личный чат');
+    await t.pump(const Duration(milliseconds: 400));
 
     // --- звонок ---
     await t.tap(find.byTooltip('Аудиозвонок'));
