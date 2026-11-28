@@ -77,6 +77,13 @@ Future<bool> softWait(WidgetTester t, Finder f, {int seconds = 20}) async {
   return false;
 }
 
+/// Дать доиграть анимации (пока меню или окно «выезжает», нажатия не доходят).
+Future<void> settle(WidgetTester t, [int ms = 500]) async {
+  await t.runAsync(() => Future<void>.delayed(Duration(milliseconds: ms)));
+  await t.pump(const Duration(milliseconds: 50));
+  await t.pump(const Duration(milliseconds: 50));
+}
+
 /// Всплывающие подсказки внизу закрывают поле ввода — ждём, пока уйдут.
 Future<void> noToast(WidgetTester t) async {
   ScaffoldMessenger.maybeOf(t.element(find.byType(Scaffold).first))?.clearSnackBars();
@@ -107,6 +114,7 @@ Future<void> openMenu(WidgetTester t, Finder target, String name) async {
       if (find.text('Ответить').evaluate().isNotEmpty) {
         // ignore: avoid_print
         print('MENU $name: попытка $attempt');
+        await settle(t);
         return;
       }
       await t.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 150)));
@@ -203,6 +211,7 @@ void main() {
     // На ПК меню открывается правой кнопкой мыши.
     await t.tap(inChat('Привет из теста'), buttons: kSecondaryButton, kind: PointerDeviceKind.mouse);
     await waitFor(t, find.text('Закрепить'), what: 'меню по правой кнопке: закрепить');
+    await settle(t);
     await shot(t, '05c_context_menu');
     await t.tap(find.text('Закрепить'));
     await waitUntil(t, () => (Store.I.chat(t.widget<ChatScreen>(find.byType(ChatScreen)).chatId)?.getListValue<String>('pins') ?? const []).isNotEmpty,
@@ -234,8 +243,10 @@ void main() {
     await noToast(t);
     await t.tap(find.byTooltip('Прикрепить'));
     await waitFor(t, find.text('Опрос'), what: 'меню вложений');
+    await settle(t);
     await t.tap(find.text('Опрос'));
     await waitFor(t, find.text('Новый опрос'), what: 'окно опроса');
+    await settle(t);
     final pf = find.descendant(of: find.byType(AlertDialog), matching: find.byType(TextField));
     await t.enterText(pf.at(0), 'Во сколько играем?');
     await t.enterText(pf.at(1), '19:00');
@@ -286,12 +297,14 @@ void main() {
     await openMenu(t, inChat('Привет, Алиса!'), 'переслать');
     await t.tap(find.text('Переслать'));
     await waitFor(t, find.text('Банда › #игры'), what: 'канал в списке пересылки');
+    await settle(t);
     await t.tap(find.text('Банда › #игры'));
     await t.pump(const Duration(milliseconds: 200));
     await t.tap(find.text('Отправить'));
     await waitFor(t, find.text('Переслано ✓'), what: 'пересылка');
     app.navigatorKey.currentState!.push(MaterialPageRoute(builder: (_) => ChatScreen(chatId: group.id)));
     await waitFor(t, find.text('общий'), what: 'полоска каналов');
+    await settle(t);
     await t.tap(find.text('игры'));
     await waitFor(t, find.textContaining('Переслано от'), what: 'пересланное в канале');
     await t.runAsync(() => Api.I.pb.collection('scheduled').create(body: {
@@ -321,6 +334,7 @@ void main() {
     await shot(t, '06a_ptt');
     await t.tap(find.descendant(of: find.byType(CallScreen), matching: find.byIcon(Icons.music_note_outlined)));
     await waitFor(t, find.text('Саундборд'), what: 'панель саундборда');
+    await settle(t);
     await t.pump(const Duration(milliseconds: 600));
     await shot(t, '06b_soundboard');
     app.navigatorKey.currentState!.pop();
