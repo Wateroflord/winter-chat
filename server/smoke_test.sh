@@ -139,6 +139,118 @@ GRP=$(curl -s -X POST $B/api/collections/chats/records -H "Authorization: $T1" -
 curl -s -X PATCH $B/api/collections/chats/records/$GRP -H "Authorization: $T2" -H 'Content-Type: application/json' -d '{"description":"Играем по пятницам"}' | jq -e '.description=="Играем по пятницам"' >/dev/null || fail "описание группы"
 ok "профиль (статус, о себе, цвет) и описание группы"
 
+# --- Каналы, опросы, пересылка, стикеры, звуки, GIF, отложенные, превью ссылок ---
+sleep 3
+J='Content-Type: application/json'
+CHR=$(curl -s -X POST $B/api/collections/chats/records -H "Authorization: $T2" -H "$J" -d "{\"name\":\"#игры\",\"is_group\":true,\"parent\":\"$GRP\",\"members\":[\"$U2\"]}")
+echo "$CHR" | jq -e ".name==\"игры\" and .parent==\"$GRP\" and (.members|length)==2" >/dev/null || fail "канал в группе: $CHR"
+CH1=$(echo "$CHR" | jq -r .id)
+VC=$(curl -s -X POST $B/api/collections/chats/records -H "Authorization: $T1" -H "$J" -d "{\"name\":\"Голосовая\",\"is_group\":true,\"parent\":\"$GRP\",\"kind\":\"voice\"}")
+echo "$VC" | jq -e '.kind=="voice"' >/dev/null || fail "голосовой канал: $VC"
+VC=$(echo "$VC" | jq -r .id)
+code=$(curl -s -o /dev/null -w '%{http_code}' -X POST $B/api/collections/chats/records -H "Authorization: $T3" -H "$J" -d "{\"name\":\"взлом\",\"is_group\":true,\"parent\":\"$GRP\"}")
+[ "$code" = "403" ] || fail "чужой сделал канал ($code)"
+code=$(curl -s -o /dev/null -w '%{http_code}' -X POST $B/api/collections/chats/records -H "Authorization: $T1" -H "$J" -d "{\"name\":\"вложенный\",\"is_group\":true,\"parent\":\"$CH1\"}")
+[ "$code" = "400" ] || fail "канал в канале ($code)"
+U3=$(curl -s -G "$B/api/collections/users/records" --data-urlencode "filter=username='petya'" -H "Authorization: $T1" | jq -r '.items[0].id')
+curl -s -o /dev/null -X PATCH $B/api/collections/chats/records/$GRP -H "Authorization: $T1" -H "$J" -d "{\"members+\":\"$U3\"}"
+curl -s $B/api/collections/chats/records/$CH1 -H "Authorization: $T3" | jq -e '.members|length==3' >/dev/null || fail "новый участник группы не попал в канал"
+R=$(curl -s -X PATCH $B/api/collections/chats/records/$CH1 -H "Authorization: $T1" -H "$J" -d "{\"members\":[\"$U1\"],\"name\":\"флуд\",\"parent\":\"\"}")
+echo "$R" | jq -e ".name==\"флуд\" and (.members|length)==3 and .parent==\"$GRP\"" >/dev/null || fail "состав канала поменяли мимо группы: $R"
+curl -s -o /dev/null -X PATCH $B/api/collections/chats/records/$GRP -H "Authorization: $T1" -H "$J" -d "{\"members-\":\"$U3\"}"
+code=$(curl -s -o /dev/null -w '%{http_code}' $B/api/collections/chats/records/$CH1 -H "Authorization: $T3")
+[ "$code" = "404" ] || fail "вышедший из группы видит канал ($code)"
+ok "каналы: создание, состав как у группы, защита"
+
+POLL=$(curl -s -X POST $B/api/collections/messages/records -H "Authorization: $T1" -H "$J" -d "{\"chat\":\"$CH1\",\"poll\":{\"q\":\"Во сколько играем?\",\"o\":[\"19\",\" 20 \",\"\",\"21\"]},\"votes\":{\"x\":[0]}}")
+echo "$POLL" | jq -e '.poll.o==["19","20","21"] and .poll.q=="Во сколько играем?" and (.votes==null or .votes=={})' >/dev/null || fail "опрос: $POLL"
+PQ=$(echo "$POLL" | jq -r .id)
+curl -s -X POST $B/api/wc/vote -H "Authorization: $T2" -H "$J" -d "{\"message\":\"$PQ\",\"options\":[1]}" | jq -e ".votes[\"$U2\"]==[1]" >/dev/null || fail "голос в опросе"
+code=$(curl -s -o /dev/null -w '%{http_code}' -X POST $B/api/wc/vote -H "Authorization: $T2" -H "$J" -d "{\"message\":\"$PQ\",\"options\":[0,1]}")
+[ "$code" = "400" ] || fail "два ответа в опросе с одним ответом ($code)"
+code=$(curl -s -o /dev/null -w '%{http_code}' -X POST $B/api/wc/vote -H "Authorization: $T3" -H "$J" -d "{\"message\":\"$PQ\",\"options\":[0]}")
+[ "$code" = "403" ] || fail "чужой голосует ($code)"
+curl -s -X PATCH $B/api/collections/messages/records/$PQ -H "Authorization: $T1" -H "$J" -d '{"poll":{"q":"x","o":["a","b"]},"votes":{}}' | jq -e '.poll.q=="Во сколько играем?" and (.votes|length)==1' >/dev/null || fail "опрос подменили правкой"
+code=$(curl -s -o /dev/null -w '%{http_code}' -X POST $B/api/collections/messages/records -H "Authorization: $T1" -H "$J" -d "{\"chat\":\"$CH1\",\"poll\":{\"q\":\"?\",\"o\":[\"один\"]}}")
+[ "$code" = "400" ] || fail "опрос с одним вариантом ($code)"
+curl -s $B/api/collections/chats/records/$CH1 -H "Authorization: $T1" | jq -e '.last_text=="📊 Во сколько играем?"' >/dev/null || fail "превью опроса в списке"
+ok "опросы"
+
+curl -s -X POST $B/api/wc/forward -H "Authorization: $T2" -H "$J" -d "{\"message\":\"$MID\",\"chats\":[\"$CH1\"]}" | jq -e '.sent==1' >/dev/null || fail "пересылка"
+FW=$(curl -s -G "$B/api/collections/messages/records" --data-urlencode "filter=chat='$CH1' && fwd!=''" -H "Authorization: $T1")
+echo "$FW" | jq -e '.items[0].fwd=="Вова" and (.items[0].files|length)==1' >/dev/null || fail "пересланное: $FW"
+FID=$(echo "$FW" | jq -r '.items[0].id'); FF=$(echo "$FW" | jq -r '.items[0].files[0]')
+curl -sf "$B/api/files/messages/$FID/$FF" | grep -q "hello file" || fail "файл в пересланном"
+code=$(curl -s -o /dev/null -w '%{http_code}' -X POST $B/api/wc/forward -H "Authorization: $T3" -H "$J" -d "{\"message\":\"$MID\",\"chats\":[\"$CH1\"]}")
+[ "$code" = "403" ] || fail "чужое сообщение переслали ($code)"
+ok "пересылка с файлами"
+
+sleep 2
+echo 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==' | base64 -d > /tmp/s.png
+ST=$(curl -s -X POST $B/api/collections/stickers/records -H "Authorization: $T1" -F "pack=Зима" -F "emoji=❄️" -F "owner=$U2" -F "file=@/tmp/s.png")
+echo "$ST" | jq -e ".owner==\"$U1\" and .pack==\"Зима\"" >/dev/null || fail "стикер: $ST"
+SID=$(echo "$ST" | jq -r .id)
+curl -s "$B/api/collections/stickers/records" -H "Authorization: $T2" | jq -e '.items|length>=1' >/dev/null || fail "друг не видит стикеры"
+code=$(curl -s -o /dev/null -w '%{http_code}' -X DELETE $B/api/collections/stickers/records/$SID -H "Authorization: $T2")
+[ "$code" != "204" ] || fail "чужой стикер удалили"
+curl -s -X POST $B/api/collections/messages/records -H "Authorization: $T2" -H "$J" -d "{\"chat\":\"$CH1\",\"sticker\":\"$SID\"}" | jq -e ".sticker==\"$SID\"" >/dev/null || fail "сообщение-стикер"
+curl -s $B/api/collections/chats/records/$CH1 -H "Authorization: $T1" | jq -e '.last_text=="🖼 Стикер"' >/dev/null || fail "превью стикера"
+ok "стикеры"
+
+python3 -c "import wave;w=wave.open('/tmp/s.wav','wb');w.setnchannels(1);w.setsampwidth(2);w.setframerate(8000);w.writeframes(b'\x00\x00'*4000);w.close()"
+SND=$(curl -s -X POST $B/api/collections/sounds/records -H "Authorization: $T2" -F "name=Бруh" -F "emoji=💥" -F "file=@/tmp/s.wav")
+echo "$SND" | jq -e ".name==\"Бруh\" and .owner==\"$U2\"" >/dev/null || fail "звук для саундборда: $SND"
+code=$(curl -s -o /dev/null -w '%{http_code}' -X POST $B/api/collections/sounds/records -H "Authorization: $T2" -F "name=txt" -F "file=@/tmp/note.txt")
+[ "$code" = "400" ] || fail "текстовый файл принят как звук ($code)"
+ok "саундборд"
+
+curl -s "$B/api/wc/gifs?q=cat" -H "Authorization: $T1" | jq -e '.enabled==false' >/dev/null || fail "GIF без ключа"
+curl -s -X POST $B/api/collections/messages/records -H "Authorization: $T1" -H "$J" -d "{\"chat\":\"$CH1\",\"gif\":{\"url\":\"https://media.giphy.com/media/x/giphy.gif\",\"w\":200,\"h\":150}}" | jq -e '.gif.w==200' >/dev/null || fail "сообщение-GIF"
+code=$(curl -s -o /dev/null -w '%{http_code}' -X POST $B/api/collections/messages/records -H "Authorization: $T1" -H "$J" -d "{\"chat\":\"$CH1\",\"gif\":{\"url\":\"javascript:alert(1)\",\"w\":1,\"h\":1}}")
+[ "$code" = "400" ] || fail "кривая GIF принята ($code)"
+curl -s -X POST $B/api/wc/panel/giphy -H "$J" -d '{"key":"abc123"}' | jq -e '.gifs==true' >/dev/null || fail "ключ Giphy в панели"
+curl -s $B/api/wc/info | jq -e '.gifs==true and .extras==1' >/dev/null || fail "info: gifs"
+curl -s -o /dev/null -X POST $B/api/wc/panel/giphy -H "$J" -d '{"key":""}'
+ok "GIF"
+
+sleep 2
+AT=$(date -u -d '+3 seconds' '+%Y-%m-%d %H:%M:%S.000Z')
+SC=$(curl -s -X POST $B/api/collections/scheduled/records -H "Authorization: $T2" -H "$J" -d "{\"chat\":\"$CH1\",\"text\":\"Катка в 20:00!\",\"at\":\"$AT\",\"remind\":true,\"author\":\"$U1\"}")
+echo "$SC" | jq -e ".author==\"$U2\" and .remind==true" >/dev/null || fail "отложенное: $SC"
+curl -s "$B/api/collections/scheduled/records" -H "Authorization: $T1" | jq -e '.items|length==0' >/dev/null || fail "чужие отложенные видны"
+code=$(curl -s -o /dev/null -w '%{http_code}' -X POST $B/api/collections/scheduled/records -H "Authorization: $T2" -H "$J" -d "{\"chat\":\"$CH1\",\"text\":\"вчера\",\"at\":\"2020-01-01 10:00:00.000Z\"}")
+[ "$code" = "400" ] || fail "отложенное в прошлое ($code)"
+code=$(curl -s -o /dev/null -w '%{http_code}' -X POST $B/api/collections/scheduled/records -H "Authorization: $T3" -H "$J" -d "{\"chat\":\"$CH1\",\"text\":\"спам\",\"at\":\"$AT\"}")
+[ "$code" != "200" ] || fail "чужой планирует сообщения в чат"
+got=""
+for i in $(seq 1 30); do
+  got=$(curl -s -G "$B/api/collections/messages/records" --data-urlencode "filter=chat='$CH1' && remind=true" -H "Authorization: $T1" | jq -r '.items[0].text // empty')
+  [ -n "$got" ] && break; sleep 1
+done
+[ "$got" = "Катка в 20:00!" ] || fail "отложенное не пришло вовремя"
+curl -s "$B/api/collections/scheduled/records" -H "Authorization: $T2" | jq -e '.items|length==0' >/dev/null || fail "отправленное отложенное не удалилось"
+ok "отложенные сообщения и напоминания"
+
+LP=$(curl -s -X POST $B/api/collections/messages/records -H "Authorization: $T1" -H "$J" -d "{\"chat\":\"$CH1\",\"text\":\"смотри http://127.0.0.1:8090/api/wc/info\"}" | jq -r .id)
+pv=""
+for i in $(seq 1 15); do
+  pv=$(curl -s $B/api/collections/messages/records/$LP -H "Authorization: $T1" | jq -c '.preview // empty')
+  [ -n "$pv" ] && [ "$pv" != "null" ] && break; sleep 1
+done
+echo "$pv" | jq -e '.fail==true' >/dev/null || fail "превью полезло в локальную сеть: $pv"
+EX=$(curl -s -X POST $B/api/collections/messages/records -H "Authorization: $T1" -H "$J" -d "{\"chat\":\"$CH1\",\"text\":\"https://example.com\"}" | jq -r .id)
+for i in $(seq 1 15); do
+  pv=$(curl -s $B/api/collections/messages/records/$EX -H "Authorization: $T1" | jq -c '.preview // empty')
+  [ -n "$pv" ] && [ "$pv" != "null" ] && break; sleep 1
+done
+if echo "$pv" | jq -e '.title=="Example Domain"' >/dev/null 2>&1; then ok "превью ссылки example.com"; else echo "::warning title=smoke::превью example.com не получилось (нет интернета?): $pv"; fi
+curl -s -X PATCH $B/api/collections/messages/records/$EX -H "Authorization: $T1" -H "$J" -d '{"preview":{"title":"подмена"}}' | jq -e '.preview.title!="подмена"' >/dev/null || fail "превью подменили правкой"
+ok "превью ссылок (локальная сеть закрыта)"
+
+code=$(curl -s -o /dev/null -w '%{http_code}' -X DELETE $B/api/collections/chats/records/$CH1 -H "Authorization: $T1")
+[ "$code" = "204" ] || fail "хозяин группы не может удалить канал ($code)"
+ok "хозяин группы удаляет каналы"
+
 # --- Игры с друзьями: шахматы и гонка в сапёр ---
 curl -s $B/api/wc/info | jq -e '.games.kinds|index("chess")' >/dev/null || fail "сервер не сообщает об играх"
 J='Content-Type: application/json'

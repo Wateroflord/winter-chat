@@ -252,8 +252,19 @@ func updateChatPreview(app core.App, msg *core.Record) {
 	}
 	text := strings.TrimSpace(msg.GetString("text"))
 	files := msg.GetStringSlice("files")
-	if text == "" && len(files) > 0 {
+	switch {
+	case text != "":
+	case readPoll(msg) != nil:
+		text = "📊 " + readPoll(msg).Q
+	case msg.GetString("sticker") != "":
+		text = "🖼 Стикер"
+	case hasJSON(msg, "gif"):
+		text = "GIF"
+	case len(files) > 0:
 		text = previewForFiles(files)
+	}
+	if msg.GetBool("remind") {
+		text = "⏰ " + text
 	}
 	if utf8.RuneCountInString(text) > 120 {
 		text = string([]rune(text)[:120]) + "…"

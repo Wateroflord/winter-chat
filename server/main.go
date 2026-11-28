@@ -40,6 +40,7 @@ type Config struct {
 	ArcStart      string `json:"arcStart"`  // первый день Winter Arc (ГГГГ-ММ-ДД)
 	BackupDir     string `json:"backupDir"` // куда ещё класть автокопии (флешка, облачный диск)
 	CloudGB       int    `json:"cloudGB"`   // сколько всего места под Winter Cloud, ГБ (0 — по умолчанию)
+	GiphyKey      string `json:"giphyKey"`  // ключ Giphy для поиска GIF (пусто — поиск выключен)
 }
 
 var (
@@ -111,6 +112,7 @@ func main() {
 	registerSocialHooks(app)
 	registerBoardsHooks(app)
 	registerFriendsHooks(app)
+	registerExtrasHooks(app)
 	registerRoutes(app)
 
 	lk := newLiveKit(app)
@@ -140,6 +142,9 @@ func main() {
 		if err := ensureFriendsSchema(se.App); err != nil {
 			return fmt.Errorf("подготовка раздела «Друзья»: %w", err)
 		}
+		if err := ensureExtrasSchema(se.App); err != nil {
+			return fmt.Errorf("подготовка каналов, опросов и стикеров: %w", err)
+		}
 		if err := ensureSuperuser(se.App); err != nil {
 			return fmt.Errorf("создание администратора: %w", err)
 		}
@@ -155,6 +160,8 @@ func main() {
 			time.Sleep(2 * time.Minute)
 			autoBackupIfDue(se.App)
 		}()
+		// Отложенные сообщения и напоминания.
+		go runScheduler(se.App)
 
 		if err := se.Next(); err != nil {
 			return err

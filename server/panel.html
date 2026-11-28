@@ -110,6 +110,13 @@
     </div>
 
     <div class="card full">
+      <h2>Поиск GIF</h2>
+      <div class="muted">Чтобы в чате был поиск GIF, нужен бесплатный ключ Giphy: зайди на developers.giphy.com → «Create an API Key» → тип «API» → скопируй ключ сюда. Без ключа работают свои стикеры и GIF из файлов.</div>
+      <div class="row"><span>Сейчас</span><span id="giphyState"></span></div>
+      <div class="row"><span>Ключ Giphy</span><span><input id="giphyKey" placeholder="вставь ключ" style="width:220px;padding:6px 8px;border-radius:8px;border:1px solid #2a3a5a;background:#0d1628;color:inherit"> <button onclick="saveGiphy()">Сохранить</button></span></div>
+    </div>
+
+    <div class="card full">
       <h2>Для продвинутых</h2>
       <div class="row"><span>Админка базы</span><a href="/_/" target="_blank">открыть</a></div>
       <div class="row"><span>Логин админки</span><span class="mono" id="aEmail"></span></div>
@@ -148,6 +155,7 @@ async function load() {
   $('users').innerHTML = (s.users || []).map(u => `<tr><td class="mono">${esc(u.username)}</td><td>${esc(u.name)}</td><td class="muted">${esc((u.created||'').slice(0,16))}</td><td><button onclick="resetPass('${esc(u.id)}','${esc(u.username)}')">Сменить пароль</button></td></tr>`).join('');
   $('noUsers').textContent = (s.users || []).length ? '' : 'Пока никто не зарегистрировался.';
   $('aEmail').textContent = s.adminEmail; $('aPass').textContent = s.adminPassword; $('dataDir').textContent = s.dataDir;
+  $('giphyState').textContent = s.giphy ? 'поиск GIF включён ✓' : 'выключен (нет ключа)';
   if (s.cloud) {
     const gb = n => (n / 1073741824).toFixed(1).replace('.', ',');
     $('cloudUsed').textContent = gb(s.cloud.used) + ' из ' + gb(s.cloud.limit) + ' ГБ';
@@ -175,6 +183,11 @@ async function saveBackupDir() {
 async function saveCloud() {
   const r = await fetch('/api/wc/panel/cloud-limit', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({gb: parseInt($('cloudGB').value, 10)})});
   const j = await r.json(); if (!r.ok) alert(j.message || 'Не удалось'); else alert('Под облако: ' + Math.round(j.limit / 1073741824) + ' ГБ');
+  load();
+}
+async function saveGiphy() {
+  const r = await fetch('/api/wc/panel/giphy', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({key: $('giphyKey').value})});
+  const j = await r.json(); if (!r.ok) alert(j.message || 'Не удалось'); else { alert(j.gifs ? 'Поиск GIF включён' : 'Поиск GIF выключен'); $('giphyKey').value = ''; }
   load();
 }
 async function openBackups() { await fetch('/api/wc/panel/open-backups', {method:'POST'}); }

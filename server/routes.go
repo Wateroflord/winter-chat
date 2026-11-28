@@ -50,6 +50,8 @@ func registerRoutes(app core.App) {
 				"social":    1,
 				"boards":    1, // общие доски задач для «Фокуса»
 				"friends":   1, // игровые вечера, Winter Cloud, Dota-статистика
+				"extras":    1, // каналы, опросы, пересылка, стикеры, звуки, отложенные
+				"gifs":      cfg.GiphyKey != "",
 			})
 		})
 
@@ -57,6 +59,7 @@ func registerRoutes(app core.App) {
 		registerSocialRoutes(se)
 		registerBackupPanelRoutes(se)
 		registerCloudRoutes(se)
+		registerExtrasRoutes(se)
 
 		r.POST("/api/wc/call-token", func(e *core.RequestEvent) error {
 			var body struct {
@@ -268,6 +271,7 @@ func panelData(app core.App) map[string]any {
 		"backupsPath":   backupsDir(app),
 		"backupDir":     cfg.BackupDir,
 		"cloud":         cloudInfo(app),
+		"giphy":         cfg.GiphyKey != "",
 		"background":    background,
 		"ports": []map[string]any{
 			{"port": HTTPPort, "proto": "TCP", "what": "приложение, чаты, файлы"},
