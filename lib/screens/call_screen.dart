@@ -347,7 +347,7 @@ class _PttHoldButton extends StatelessWidget {
             Icon(talking ? Icons.mic : Icons.mic_none, color: talking ? W.bg : W.text),
             const SizedBox(width: 8),
             Text(
-              talking ? 'Говоришь…' : (Ptt.desktop ? 'Держи ${pttKeyById(Settings.I.pttKey).label} или эту кнопку' : 'Держи, чтобы говорить'),
+              talking ? 'Говоришь…' : (Ptt.desktop ? 'Держи, чтобы говорить (${pttKeyById(Settings.I.pttKey).label})' : 'Держи, чтобы говорить'),
               style: TextStyle(color: talking ? W.bg : W.text, fontWeight: FontWeight.w700),
             ),
           ],
