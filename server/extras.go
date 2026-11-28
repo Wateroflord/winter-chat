@@ -51,6 +51,7 @@ func ensureExtrasSchema(app core.App) error {
 	addField(chats, &core.RelationField{Name: "parent", CollectionId: chats.Id, MaxSelect: 1, CascadeDelete: true})
 	addField(chats, &core.TextField{Name: "kind", Max: 10, Pattern: `^voice$`})
 	addField(chats, &core.NumberField{Name: "position", OnlyInt: true})
+	addField(chats, &core.JSONField{Name: "last_mention", MaxSize: 4 << 10}) // кого упомянули в последнем сообщении
 	chats.AddIndex("idx_chats_parent", false, "parent", "")
 	// Канал может удалить и тот, кто его сделал, и хозяин группы.
 	chats.DeleteRule = types.Pointer("owner = @request.auth.id || parent.owner = @request.auth.id")
@@ -249,6 +250,7 @@ func registerExtrasHooks(app core.App) {
 		old := e.Record.Original()
 		e.Record.Set("parent", old.GetString("parent"))
 		e.Record.Set("kind", old.GetString("kind"))
+		e.Record.Set("last_mention", old.Get("last_mention"))
 		if old.GetString("parent") != "" {
 			// Состав канала = состав группы.
 			e.Record.Set("members", old.GetStringSlice("members"))
@@ -403,6 +405,46 @@ func syncChannels(app core.App, group *core.Record) {
 			app.Logger().Warn("channel members", "error", err)
 		}
 	}
+}
+
+// ---------- упоминания ----------
+
+var mentionRe = regexp.MustCompile(`(?:^|[^\p{L}\p{N}_@])@([\p{L}\p{N}_.\-]{2,32})`)
+
+// mentionsIn — кого зовут в сообщении: id участников и «all» для @все.
+func mentionsIn(app core.App, chat, msg *core.Record) []string {
+	if msg.GetBool("remind") {
+		return []string{"all"}
+	}
+	var names []string
+	all := false
+	for _, m := range mentionRe.FindAllStringSubmatch(msg.GetString("text"), 20) {
+		n := strings.ToLower(strings.TrimRight(m[1], ".-"))
+		switch n {
+		case "все", "всем", "all", "everyone", "here", "тут":
+			all = true
+		default:
+			names = append(names, n)
+		}
+	}
+	var out []string
+	if all {
+		out = append(out, "all")
+	}
+	if len(names) == 0 {
+		return out
+	}
+	members := chat.GetStringSlice("members")
+	users, err := app.FindRecordsByIds("users", members)
+	if err != nil {
+		return out
+	}
+	for _, u := range users {
+		if contains(names, strings.ToLower(u.GetString("username"))) && !contains(out, u.Id) {
+			out = append(out, u.Id)
+		}
+	}
+	return out
 }
 
 // ---------- отложенные: отправляет сам сервер ----------

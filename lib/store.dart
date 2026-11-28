@@ -69,6 +69,31 @@ class Store extends ChangeNotifier {
 
   PocketBase get _pb => Api.I.pb;
 
+  /// Какой чат сейчас открыт на экране (чтобы не звенеть его сообщениями).
+  String? visibleChat;
+
+  // ---------- упоминания: меня позвали через @ник / @все ----------
+
+  static const _kMentions = 'mentions_v1';
+  Set<String>? _mentioned;
+  Set<String> get _ment => _mentioned ??= (Api.I.prefs.getStringList(_kMentions) ?? const []).toSet();
+
+  bool isMentioned(String chatId) => _ment.contains(chatId);
+
+  void clearMention(String chatId) {
+    if (_ment.remove(chatId)) {
+      Api.I.prefs.setStringList(_kMentions, _ment.toList());
+      notifyListeners();
+    }
+  }
+
+  /// В последнем сообщении чата позвали меня (по нику или всех).
+  static bool mentionsMe(RecordModel chat) {
+    final m = chat.data['last_mention'];
+    if (m is! List || !Api.I.loggedIn) return false;
+    return m.contains('all') || m.contains(Api.I.myId);
+  }
+
   int _gen = 0;
 
   Future<void> start() async {
@@ -142,6 +167,9 @@ class Store extends ChangeNotifier {
           final was = before?.getStringValue('last_at') ?? '';
           if (at.isNotEmpty && at.compareTo(was) > 0 && r.getStringValue('last_author') != Api.I.myId) {
             _typing[r.id]?.remove(r.getStringValue('last_author')); // написал — уже не печатает
+            if (mentionsMe(r) && visibleChat != r.id && _ment.add(r.id)) {
+              Api.I.prefs.setStringList(_kMentions, _ment.toList());
+            }
             _newMessages.add(r.id);
           }
         }
@@ -193,9 +221,19 @@ class Store extends ChangeNotifier {
   }
 
   void _sort() {
-    String key(RecordModel c) {
+    // Группа поднимается и от сообщений в её каналах.
+    final latest = <String, String>{};
+    for (final c in chats) {
+      final p = c.getStringValue('parent');
+      if (p.isEmpty || c.getStringValue('kind') == 'voice') continue;
       final a = c.getStringValue('last_at');
-      return a.isNotEmpty ? a : c.getStringValue('created');
+      if (a.compareTo(latest[p] ?? '') > 0) latest[p] = a;
+    }
+    String key(RecordModel c) {
+      var a = c.getStringValue('last_at');
+      if (a.isEmpty) a = c.getStringValue('created');
+      final k = latest[c.id];
+      return k != null && k.compareTo(a) > 0 ? k : a;
     }
 
     // Закреплённые — сверху, внутри групп — по последнему сообщению.

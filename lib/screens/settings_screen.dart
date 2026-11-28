@@ -12,6 +12,7 @@ import '../api.dart';
 import '../call_controller.dart';
 import '../instant.dart';
 import '../main.dart' show buildNumber;
+import '../ptt.dart';
 import '../settings.dart';
 import '../sounds.dart';
 import '../theme.dart';
@@ -825,6 +826,54 @@ class _CallsSectionState extends State<_CallsSection> {
           padding: EdgeInsets.fromLTRB(16, 2, 16, 10),
           child: Text('Микрофон, камера и звук применяются к следующему звонку.', style: W.small),
         ),
+        _Switch(
+          icon: Icons.settings_voice_outlined,
+          title: 'Рация (push-to-talk)',
+          subtitle: Ptt.desktop
+              ? 'Микрофон работает, только пока держишь клавишу${Platform.isWindows ? ' — даже когда открыта игра' : ' (пока окно Winter Chat активно)'}'
+              : 'Микрофон работает, только пока держишь кнопку в звонке',
+          value: s.pttEnabled,
+          onChanged: (v) => CallController.I.setPtt(v),
+        ),
+        if (s.pttEnabled && Ptt.desktop)
+          ListTile(
+            leading: Icon(Icons.keyboard_outlined, color: W.muted),
+            title: Text('Клавиша рации', style: W.body),
+            trailing: DropdownButton<String>(
+              value: pttKeyById(s.pttKey).id,
+              underline: const SizedBox.shrink(),
+              items: [for (final k in pttKeys) DropdownMenuItem(value: k.id, child: Text(k.label))],
+              onChanged: (v) {
+                if (v != null) s.pttKey = v;
+              },
+            ),
+          ),
+        if (s.pttEnabled)
+          _Switch(
+            icon: Icons.touch_app_outlined,
+            title: 'Щелчок рации',
+            subtitle: 'Тихий звук, когда микрофон включается и выключается',
+            value: s.pttClick,
+            onChanged: (v) => s.pttClick = v,
+          ),
+        _Switch(
+          icon: Icons.music_note_outlined,
+          title: 'Звуки саундборда от друзей',
+          subtitle: 'Кнопка «Звуки» в звонке',
+          value: s.soundboardOn,
+          onChanged: (v) => s.soundboardOn = v,
+        ),
+        if (s.soundboardOn)
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Row(
+              children: [
+                Icon(Icons.volume_down, color: W.muted),
+                Expanded(child: Slider(value: s.soundboardVolume.toDouble(), min: 0, max: 100, onChanged: (v) => s.soundboardVolume = v.round())),
+                SizedBox(width: 44, child: Text('${s.soundboardVolume}%', style: W.small)),
+              ],
+            ),
+          ),
         _Switch(
           icon: Icons.image_outlined,
           title: 'Показывать фото сразу',

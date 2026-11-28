@@ -9,6 +9,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'night_remind.dart';
 import 'settings.dart';
+import 'widgets/rich_text.dart';
 
 /// Уведомления о новых сообщениях, когда приложение закрыто или свёрнуто (Android).
 ///
@@ -62,22 +63,38 @@ class BgNotify {
           'sort': '-created',
           'perPage': '20',
           'expand': 'author,chat',
-          'fields': 'id,chat,created,text,files,expand.author.name,expand.author.username,expand.chat.name,expand.chat.is_group',
+          'fields': 'id,chat,created,text,files,poll,sticker,gif,remind,expand.author.name,expand.author.username,expand.chat.name,expand.chat.is_group',
         },
       );
 
   /// Текст уведомлений из ответа сервера (проверяется тестами).
-  static List<({String title, String body})> format(Map res, {Set<String> muted = const {}}) {
+  static List<({String title, String body})> format(Map res, {Set<String> muted = const {}, String myUsername = ''}) {
     final out = <({String title, String body})>[];
     for (final m in (res['items'] as List? ?? const []).whereType<Map>()) {
-      if (muted.contains('${m['chat'] ?? ''}')) continue; // чат «без звука»
+      final raw = '${m['text'] ?? ''}';
+      final ment = mentionsIn(raw);
+      final callsMe = m['remind'] == true || ment.contains('all') || (myUsername.isNotEmpty && ment.contains(myUsername.toLowerCase()));
+      if (muted.contains('${m['chat'] ?? ''}') && !callsMe) continue; // чат «без звука», если не позвали лично
       final ex = (m['expand'] as Map?) ?? const {};
       final a = (ex['author'] as Map?) ?? const {};
       final c = (ex['chat'] as Map?) ?? const {};
       final who = '${a['name'] ?? ''}'.trim().isNotEmpty ? '${a['name']}' : '${a['username'] ?? 'Кто-то'}';
       final group = c['is_group'] == true && '${c['name'] ?? ''}'.trim().isNotEmpty;
-      var text = '${m['text'] ?? ''}'.trim();
-      if (text.isEmpty) text = (m['files'] is List && (m['files'] as List).isNotEmpty) ? '📎 Файл' : 'Новое сообщение';
+      var text = richPlain(raw).trim();
+      if (text.isEmpty) {
+        final poll = m['poll'];
+        if (poll is Map && poll['q'] != null) {
+          text = '📊 ${poll['q']}';
+        } else if ('${m['sticker'] ?? ''}'.isNotEmpty) {
+          text = '🖼 Стикер';
+        } else if (m['gif'] is Map) {
+          text = 'GIF';
+        } else {
+          text = (m['files'] is List && (m['files'] as List).isNotEmpty) ? '📎 Файл' : 'Новое сообщение';
+        }
+      }
+      if (m['remind'] == true) text = '⏰ $text';
+      if (callsMe && m['remind'] != true) text = '📣 $text';
       if (text.length > 200) text = '${text.substring(0, 200)}…';
       out.add((title: group ? '$who · ${c['name']}' : who, body: text));
     }
@@ -108,7 +125,8 @@ class BgNotify {
     final items = (res['items'] as List? ?? const []).whereType<Map>().toList();
     if (items.isEmpty) return;
     await p.setString(kLastNotified, '${items.first['created']}');
-    final list = format(res, muted: (p.getStringList(Settings.kMutedChats) ?? const []).toSet());
+    final myUsername = '${(a['record'] as Map?)?['username'] ?? (a['model'] as Map?)?['username'] ?? ''}';
+    final list = format(res, muted: (p.getStringList(Settings.kMutedChats) ?? const []).toSet(), myUsername: myUsername);
     if (list.isEmpty) return;
     await _initPlugin();
     final details = NotificationDetails(

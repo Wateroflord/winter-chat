@@ -2,16 +2,18 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:media_kit/media_kit.dart';
+import 'package:winter_core/winter_core.dart';
 
 import 'api.dart';
 import 'bg_notify.dart';
 import 'instant.dart';
 import 'night_remind.dart';
+import 'outbox.dart';
+import 'ptt.dart';
 import 'screens/home_screen.dart';
 import 'screens/login_screen.dart';
 import 'settings.dart';
 import 'theme.dart';
-import 'package:winter_core/winter_core.dart';
 
 const buildNumber = String.fromEnvironment('BUILD', defaultValue: 'dev');
 
@@ -74,7 +76,13 @@ class _WinterChatAppState extends State<WinterChatApp> {
         final mq = MediaQuery.of(context);
         return MediaQuery(
           data: mq.copyWith(textScaler: TextScaler.linear(Settings.I.textScale)),
-          child: child ?? const SizedBox.shrink(),
+          // Рация на боковой кнопке мыши внутри окна (на Windows ещё и вне окна).
+          child: Listener(
+            behavior: HitTestBehavior.translucent,
+            onPointerDown: (e) => Ptt.I.pointer(e.buttons),
+            onPointerUp: (e) => Ptt.I.pointer(e.buttons),
+            child: child ?? const SizedBox.shrink(),
+          ),
         );
       },
       home: const Root(),
@@ -140,6 +148,7 @@ class _RootState extends State<Root> with WidgetsBindingObserver {
     }
     Instant.init();
     NightRemind.start();
+    if (Api.I.loggedIn) Outbox.I.load();
     if (mounted) setState(() => _booting = false);
   }
 

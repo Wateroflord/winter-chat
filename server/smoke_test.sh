@@ -230,6 +230,11 @@ done
 [ "$got" = "Катка в 20:00!" ] || fail "отложенное не пришло вовремя"
 curl -s "$B/api/collections/scheduled/records" -H "Authorization: $T2" | jq -e '.items|length==0' >/dev/null || fail "отправленное отложенное не удалилось"
 ok "отложенные сообщения и напоминания"
+curl -s $B/api/collections/chats/records/$CH1 -H "Authorization: $T1" | jq -e '.last_mention==["all"]' >/dev/null || fail "напоминание зовёт всех"
+curl -s -o /dev/null -X POST $B/api/collections/messages/records -H "Authorization: $T1" -H "$J" -d "{\"chat\":\"$CH1\",\"text\":\"@VOVA ты где? и @nobody\"}"
+curl -s $B/api/collections/chats/records/$CH1 -H "Authorization: $T1" | jq -e ".last_mention==[\"$U2\"]" >/dev/null || fail "упоминание @vova"
+curl -s -X PATCH $B/api/collections/chats/records/$CH1 -H "Authorization: $T2" -H "$J" -d '{"last_mention":["all"]}' | jq -e ".last_mention==[\"$U2\"]" >/dev/null || fail "упоминание подделали"
+ok "упоминания @ник и @все"
 
 LP=$(curl -s -X POST $B/api/collections/messages/records -H "Authorization: $T1" -H "$J" -d "{\"chat\":\"$CH1\",\"text\":\"смотри http://127.0.0.1:8090/api/wc/info\"}" | jq -r .id)
 pv=""

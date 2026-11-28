@@ -5,13 +5,16 @@ import 'package:pocketbase/pocketbase.dart';
 
 import '../api.dart';
 import '../call_controller.dart';
+import '../outbox.dart';
 import '../settings.dart';
 import '../sounds.dart';
 import '../store.dart';
 import '../theme.dart';
 import '../util.dart';
 import '../widgets/avatar.dart';
+import '../widgets/rich_text.dart';
 import 'call_screen.dart';
+import 'channels.dart';
 import 'chat_screen.dart';
 import 'friends_screen.dart';
 import 'people_sheet.dart';
@@ -39,12 +42,28 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     Store.I.start();
     _incomingSub = Store.I.incomingCalls.listen(_onIncoming);
     _messagesSub = Store.I.newMessages.listen(_onNewMessage);
+    chatNav.addListener(_onNav);
+  }
+
+  /// Канал выбран в полоске каналов (на широком экране меняем открытый чат).
+  void _onNav() {
+    final id = chatNav.value;
+    if (id == null || !mounted || !_wide) return;
+    setState(() => _selected = id);
   }
 
   /// Звук нового сообщения (если этот чат сейчас не открыт).
   void _onNewMessage(String chatId) {
+    if (Store.I.visibleChat == chatId) return;
     if (_wide && _selected == chatId) return;
     if (!_wide && _openChatId == chatId) return;
+    final c = Store.I.chat(chatId);
+    if (c != null && Store.mentionsMe(c)) {
+      // Позвали меня — звук даже в чате «без звука».
+      Sounds.message(chatId: null);
+      return;
+    }
+    if (c != null && Api.I.isMuted(c)) return;
     Sounds.message(chatId: chatId);
   }
 
@@ -57,6 +76,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     CallController.I.removeListener(_changed);
     _incomingSub?.cancel();
     _messagesSub?.cancel();
+    chatNav.removeListener(_onNav);
     Store.I.stop();
     super.dispose();
   }
@@ -226,7 +246,8 @@ class _ChatList extends StatelessWidget {
         ),
       );
     }
-    if (store.chats.isEmpty) {
+    final visible = [for (final c in store.chats) if (!isChannel(c)) c];
+    if (visible.isEmpty) {
       return Center(
         child: Padding(
           padding: const EdgeInsets.all(24),
@@ -256,10 +277,11 @@ class _ChatList extends StatelessWidget {
       onRefresh: () => store.refresh(),
       child: ListView.builder(
         padding: const EdgeInsets.symmetric(vertical: 6),
-        itemCount: store.chats.length,
+        itemCount: visible.length,
         itemBuilder: (_, i) {
-          final c = store.chats[i];
-          return _ChatTile(chat: c, selected: c.id == selected, onTap: () => onOpen(c));
+          final c = visible[i];
+          final sel = selected != null && (c.id == selected || Store.I.chat(selected!)?.getStringValue('parent') == c.id);
+          return _ChatTile(chat: c, selected: sel, onTap: () => onOpen(c));
         },
       ),
     );
@@ -277,12 +299,20 @@ class _ChatTile extends StatelessWidget {
     final api = Api.I;
     final isGroup = chat.getBoolValue('is_group');
     final title = api.chatTitle(chat);
-    final unread = api.isUnread(chat);
-    final inCall = Store.I.callParticipants(chat.id).isNotEmpty;
-    final quietRoom = Store.I.calls[chat.id]?.getBoolValue('quiet') ?? false;
-    final typing = Store.I.typingIn(chat.id);
-    var sub = chat.getStringValue('last_text');
-    final lastAuthor = chat.getStringValue('last_author');
+    // У группы с каналами — самое свежее из группы и её каналов.
+    final latest = isGroup ? latestIn(chat) : chat;
+    final unread = isGroup ? anyUnread(chat) : api.isUnread(chat);
+    final mention = isGroup ? anyMention(chat) : Store.I.isMentioned(chat.id);
+    final voice = isGroup ? voiceParticipants(chat) : const <String>[];
+    final inCall = Store.I.callParticipants(chat.id).isNotEmpty || voice.isNotEmpty;
+    final quietRoom = voice.isNotEmpty || (Store.I.calls[chat.id]?.getBoolValue('quiet') ?? false);
+    final typing = [
+      ...Store.I.typingIn(chat.id),
+      if (isGroup)
+        for (final c in channelsOf(chat.id)) ...Store.I.typingIn(c.id),
+    ];
+    var sub = richPlain(latest.getStringValue('last_text'));
+    final lastAuthor = latest.getStringValue('last_author');
     if (sub.isNotEmpty && lastAuthor.isNotEmpty) {
       if (lastAuthor == api.myId) {
         sub = 'Ты: $sub';
@@ -290,13 +320,15 @@ class _ChatTile extends StatelessWidget {
         sub = '${api.nameOf(lastAuthor)}: $sub';
       }
     }
+    if (latest.id != chat.id && sub.isNotEmpty) sub = '${api.chatTitle(latest)} · $sub';
+    final draft = selected ? '' : Outbox.draft(chat.id).trim();
     if (sub.isEmpty) sub = isGroup ? '${chat.getListValue<String>('members').length} участников' : 'Нет сообщений';
     final other = isGroup ? null : api.otherMember(chat);
     final status = other == null ? null : api.statusOf(other);
     if (!Settings.I.chatPreview) {
       sub = isGroup ? '${chat.getListValue<String>('members').length} участников' : (status == null ? '' : api.statusText(other!));
     }
-    final at = parseDate(chat.getStringValue('last_at'));
+    final at = parseDate(latest.getStringValue('last_at'));
     final prefs = Settings.I.chatPrefs(chat.id);
 
     final avatar = ChatAvatar(chat, size: 46);
@@ -370,18 +402,37 @@ class _ChatTile extends StatelessWidget {
                       Row(
                         children: [
                           Expanded(
-                            child: Text(
+                            child: draft.isNotEmpty && typing.isEmpty && !inCall
+                                ? Text.rich(
+                                    TextSpan(children: [
+                                      TextSpan(text: 'Черновик: ', style: TextStyle(color: W.bad, fontWeight: FontWeight.w600)),
+                                      TextSpan(text: draft.replaceAll('\n', ' ')),
+                                    ]),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: TextStyle(fontSize: 13.5, color: W.muted),
+                                  )
+                                : Text(
                               typing.isNotEmpty
                                   ? (isGroup ? '${api.nameOf(typing.first)} печатает…' : 'печатает…')
                                   : inCall
-                                      ? (quietRoom ? '🔊 Голосовая комната' : 'Идёт звонок')
+                                      ? (voice.isNotEmpty ? '🔊 В голосовом: ${voice.length}' : (quietRoom ? '🔊 Голосовая комната' : 'Идёт звонок'))
                                       : sub,
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                               style: TextStyle(fontSize: 13.5, color: typing.isNotEmpty ? W.ice : (inCall ? W.good : (unread ? W.text : W.muted))),
                             ),
                           ),
-                          if (unread)
+                          if (mention)
+                            Container(
+                              width: 18,
+                              height: 18,
+                              margin: const EdgeInsets.only(left: 6),
+                              alignment: Alignment.center,
+                              decoration: BoxDecoration(color: W.ice, shape: BoxShape.circle),
+                              child: Text('@', style: TextStyle(color: W.onAccent, fontSize: 12, fontWeight: FontWeight.w900, height: 1.1)),
+                            )
+                          else if (unread)
                             Container(
                               width: 10,
                               height: 10,

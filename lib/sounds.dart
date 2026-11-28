@@ -73,6 +73,17 @@ class Sounds {
     } catch (_) {}
   }
 
+  static Player? _clickPlayer;
+
+  /// Щелчок рации: [on] — включил микрофон, иначе выключил.
+  static Future<void> pttClick(bool on) async {
+    try {
+      final p = _clickPlayer ??= Player();
+      await p.setVolume(45);
+      await p.open(Media(await _file(on ? 'ptt_on.wav' : 'ptt_off.wav', () => clickWav(on))));
+    } catch (_) {}
+  }
+
   static Future<String> _file(String name, Uint8List Function() make) async {
     final dir = await getTemporaryDirectory();
     final f = File('${dir.path}${Platform.pathSeparator}winter_chat_$name');
@@ -120,6 +131,13 @@ void _note(Float64List out, double at, double hz, double len, double amp, {doubl
     final env = math.exp(-t / decay) * math.min(1.0, k / (_rate * 0.004));
     out[start + k] += (math.sin(phase) + harmonic * math.sin(2 * phase)) * env * amp;
   }
+}
+
+/// Короткий щелчок рации (вверх — включил, вниз — выключил).
+Uint8List clickWav(bool on) {
+  final s = Float64List((_rate * 0.09).round());
+  _note(s, 0, on ? 1400 : 900, 0.07, 0.35, decay: 0.02, harmonic: 0.1, bend: on ? 0.3 : -0.3);
+  return _wav(s);
 }
 
 /// Звуки сообщения (1…5).

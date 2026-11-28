@@ -8,11 +8,16 @@ import '../store.dart';
 import '../theme.dart';
 import '../util.dart';
 import '../widgets/avatar.dart';
+import '../widgets/rich_text.dart';
 
 /// Короткое описание сообщения: текст или что в нём (для цитат, закрепов, поиска).
 String messageSnippet(RecordModel m) {
-  final text = m.getStringValue('text').trim();
+  final text = richPlain(m.getStringValue('text').trim());
   if (text.isNotEmpty) return text.replaceAll('\n', ' ');
+  final poll = m.data['poll'];
+  if (poll is Map && poll['q'] != null) return '📊 ${poll['q']}';
+  if (m.getStringValue('sticker').isNotEmpty) return '🖼 Стикер';
+  if (m.data['gif'] is Map) return 'GIF';
   final files = m.getListValue<String>('files');
   if (files.isEmpty) return 'Сообщение';
   final f = files.first;

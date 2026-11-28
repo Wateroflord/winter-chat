@@ -270,6 +270,11 @@ func updateChatPreview(app core.App, msg *core.Record) {
 		text = string([]rune(text)[:120]) + "…"
 	}
 	chat.Set("last_text", text)
+	if m := mentionsIn(app, chat, msg); len(m) > 0 {
+		chat.Set("last_mention", m)
+	} else {
+		chat.Set("last_mention", nil)
+	}
 	chat.Set("last_at", msg.GetDateTime("created"))
 	chat.Set("last_author", msg.GetString("author"))
 	if err := app.Save(chat); err != nil {

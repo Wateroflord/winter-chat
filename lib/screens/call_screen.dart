@@ -6,6 +6,9 @@ import 'package:livekit_client/livekit_client.dart';
 
 import '../api.dart';
 import '../call_controller.dart';
+import '../ptt.dart';
+import '../settings.dart';
+import '../soundboard.dart';
 import '../theme.dart';
 import '../util.dart';
 import '../widgets/avatar.dart';
@@ -35,6 +38,8 @@ class _CallScreenState extends State<CallScreen> {
   void initState() {
     super.initState();
     call.addListener(_changed);
+    Ptt.I.addListener(_changed);
+    Soundboard.I.addListener(_changed);
     _ticker = Timer.periodic(const Duration(seconds: 1), (_) {
       if (mounted) setState(() {});
     });
@@ -43,6 +48,8 @@ class _CallScreenState extends State<CallScreen> {
   @override
   void dispose() {
     call.removeListener(_changed);
+    Ptt.I.removeListener(_changed);
+    Soundboard.I.removeListener(_changed);
     _ticker?.cancel();
     super.dispose();
   }
@@ -228,18 +235,58 @@ class _CallScreenState extends State<CallScreen> {
 
   Widget _controls() {
     final connected = call.room != null;
-    return Padding(
+    final ptt = Settings.I.pttEnabled;
+    final last = Soundboard.I.last;
+    final showLast = last != null && DateTime.now().difference(last.at) < const Duration(seconds: 4);
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (showLast)
+          Padding(
+            padding: const EdgeInsets.only(top: 6),
+            child: Chip(
+              avatar: const Icon(Icons.music_note, size: 16),
+              label: Text('${Api.I.nameOf(last.user)}: ${last.name}'),
+            ),
+          ),
+        if (ptt && connected)
+          Padding(
+            padding: const EdgeInsets.only(top: 8),
+            child: _PttHoldButton(talking: Ptt.I.down),
+          ),
+        Padding(
       padding: const EdgeInsets.fromLTRB(12, 8, 12, 14),
       child: Wrap(
         alignment: WrapAlignment.center,
         spacing: 14,
         runSpacing: 10,
         children: [
+          if (ptt)
+            _CtrlButton(
+              icon: Ptt.I.down ? Icons.mic : Icons.settings_voice_outlined,
+              label: Ptt.I.down ? 'Говоришь' : (Ptt.desktop ? 'Рация: ${pttKeyById(Settings.I.pttKey).label.split(' (').first}' : 'Рация'),
+              active: Ptt.I.down,
+              onTap: connected ? () => call.setPtt(false) : null,
+            )
+          else
+            _CtrlButton(
+              icon: call.micOn ? Icons.mic : Icons.mic_off,
+              label: call.micOn ? 'Микрофон' : 'Выключен',
+              active: call.micOn,
+              onTap: connected ? call.toggleMic : null,
+            ),
+          if (!ptt)
+            _CtrlButton(
+              icon: Icons.settings_voice_outlined,
+              label: 'Рация',
+              active: false,
+              onTap: connected ? () => call.setPtt(true) : null,
+            ),
           _CtrlButton(
-            icon: call.micOn ? Icons.mic : Icons.mic_off,
-            label: call.micOn ? 'Микрофон' : 'Выключен',
-            active: call.micOn,
-            onTap: connected ? call.toggleMic : null,
+            icon: Icons.music_note_outlined,
+            label: 'Звуки',
+            active: false,
+            onTap: connected ? () => showModalBottomSheet(context: context, isScrollControlled: true, builder: (_) => const SoundboardPanel()) : null,
           ),
           _CtrlButton(
             icon: call.camOn ? Icons.videocam : Icons.videocam_off,
@@ -268,6 +315,43 @@ class _CallScreenState extends State<CallScreen> {
             onTap: () => call.leave(),
           ),
         ],
+      ),
+        ),
+      ],
+    );
+  }
+}
+
+/// Большая кнопка рации: держи — говоришь.
+class _PttHoldButton extends StatelessWidget {
+  const _PttHoldButton({required this.talking});
+  final bool talking;
+
+  @override
+  Widget build(BuildContext context) {
+    return Listener(
+      onPointerDown: (_) => Ptt.I.hold(true),
+      onPointerUp: (_) => Ptt.I.hold(false),
+      onPointerCancel: (_) => Ptt.I.hold(false),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 120),
+        padding: const EdgeInsets.symmetric(horizontal: 26, vertical: 14),
+        decoration: BoxDecoration(
+          color: talking ? W.good : W.surface3,
+          borderRadius: BorderRadius.circular(40),
+          boxShadow: talking ? [BoxShadow(color: W.good.withValues(alpha: 0.5), blurRadius: 18)] : null,
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(talking ? Icons.mic : Icons.mic_none, color: talking ? W.bg : W.text),
+            const SizedBox(width: 8),
+            Text(
+              talking ? 'Говоришь…' : (Ptt.desktop ? 'Держи ${pttKeyById(Settings.I.pttKey).label} или эту кнопку' : 'Держи, чтобы говорить'),
+              style: TextStyle(color: talking ? W.bg : W.text, fontWeight: FontWeight.w700),
+            ),
+          ],
+        ),
       ),
     );
   }

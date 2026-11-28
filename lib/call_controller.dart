@@ -8,7 +8,9 @@ import 'package:flutter_webrtc/flutter_webrtc.dart' as rtc;
 import 'package:livekit_client/livekit_client.dart';
 
 import 'api.dart';
+import 'ptt.dart';
 import 'settings.dart';
+import 'soundboard.dart';
 
 /// Один активный звонок на всё приложение.
 class CallController extends ChangeNotifier {
@@ -94,6 +96,12 @@ class CallController extends ChangeNotifier {
           reconnecting = false;
           notifyListeners();
         })
+        ..on<DataReceivedEvent>((e) {
+          if (e.topic == soundTopic) {
+            final from = e.participant?.identity ?? e.participantIdentity;
+            unawaited(Soundboard.I.onData(from, e.data));
+          }
+        })
         ..on<RoomEvent>((_) => notifyListeners());
       r.addListener(notifyListeners);
 
@@ -114,9 +122,13 @@ class CallController extends ChangeNotifier {
       }
       try {
         await r.localParticipant?.setMicrophoneEnabled(true).timeout(const Duration(seconds: 10));
+        // Рация: микрофон готов, но молчит, пока не зажата клавиша.
+        if (Settings.I.pttEnabled) await r.localParticipant?.setMicrophoneEnabled(false);
       } catch (e) {
         error = 'Микрофон недоступен: $e';
       }
+      Ptt.I.sync();
+      unawaited(Soundboard.I.load());
       if (withCamera) {
         await toggleCamera();
       }
@@ -162,6 +174,28 @@ class CallController extends ChangeNotifier {
     _listener = null;
     if (r != null) unawaited(r.dispose());
     if (isAndroid) unawaited(_stopBackground());
+    Ptt.I.sync();
+    notifyListeners();
+  }
+
+  /// Рация: говорю / молчу.
+  Future<void> setPttTalking(bool on) async {
+    if (room == null) return;
+    try {
+      await local?.setMicrophoneEnabled(on);
+    } catch (_) {}
+    notifyListeners();
+  }
+
+  /// Включить или выключить режим рации (и прямо в звонке тоже).
+  Future<void> setPtt(bool enabled) async {
+    Settings.I.pttEnabled = enabled;
+    if (room != null) {
+      try {
+        await local?.setMicrophoneEnabled(!enabled);
+      } catch (_) {}
+    }
+    Ptt.I.sync();
     notifyListeners();
   }
 

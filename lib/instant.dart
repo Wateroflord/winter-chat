@@ -10,6 +10,7 @@ import 'api.dart';
 import 'bg_notify.dart';
 import 'settings.dart';
 import 'store.dart';
+import 'widgets/rich_text.dart';
 
 /// Мгновенные уведомления.
 ///
@@ -88,14 +89,18 @@ class Instant {
   static Future<void> _onMessage(String chatId) async {
     if (!background || !_ready) return;
     final s = Settings.I;
-    if (!s.notify || s.dnd || s.isMuted(chatId)) return;
+    if (!s.notify || s.dnd) return;
     final chat = Store.I.chat(chatId);
     if (chat == null) return;
     final api = Api.I;
+    // Позвали по нику / @все / напоминание — показываем даже в чате «без звука».
+    final mention = Store.mentionsMe(chat);
+    if (api.isMuted(chat) && !mention) return;
     final author = chat.getStringValue('last_author');
     final group = chat.getBoolValue('is_group');
-    final title = group ? '${api.nameOf(author)} · ${api.chatTitle(chat)}' : api.nameOf(author);
-    var body = chat.getStringValue('last_text').trim();
+    final title = group ? '${api.nameOf(author)} · ${api.chatTitleFull(chat)}' : api.nameOf(author);
+    var body = richPlain(chat.getStringValue('last_text').trim());
+    if (mention) body = '📣 $body';
     if (body.isEmpty) body = 'Новое сообщение';
     final withSound = s.notifySound;
     final details = NotificationDetails(

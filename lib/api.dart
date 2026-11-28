@@ -7,6 +7,7 @@ import 'package:pocketbase/pocketbase.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'settings.dart';
+import 'store.dart';
 import 'util.dart';
 
 /// Связь с сервером Winter Chat (PocketBase на ноутбуке друга).
@@ -338,15 +339,68 @@ class Api extends ChangeNotifier {
   }
 
   /// Название чата: своё имя (если задано), для личного — имя собеседника.
+  /// Канал группы — «#игры» (голосовой — просто название).
   String chatTitle(RecordModel chat) {
     final alias = Settings.I.alias(chat.id);
     if (alias.isNotEmpty) return alias;
+    if (chat.getStringValue('parent').isNotEmpty) {
+      final n = chat.getStringValue('name').trim();
+      return chat.getStringValue('kind') == 'voice' ? n : '#$n';
+    }
     if (chat.getBoolValue('is_group')) {
       final n = chat.getStringValue('name').trim();
       return n.isNotEmpty ? n : 'Группа';
     }
     final other = otherMember(chat);
     return other == null ? 'Заметки' : nameOf(other);
+  }
+
+  /// Полное название: для канала — «Группа › #игры».
+  String chatTitleFull(RecordModel chat) {
+    final p = chat.getStringValue('parent');
+    if (p.isEmpty) return chatTitle(chat);
+    final parent = Store.I.chat(p);
+    return parent == null ? chatTitle(chat) : '${chatTitle(parent)} › ${chatTitle(chat)}';
+  }
+
+  /// Чат «без звука» (канал — если без звука он сам или его группа).
+  bool isMuted(RecordModel chat) {
+    if (Settings.I.isMuted(chat.id)) return true;
+    final p = chat.getStringValue('parent');
+    return p.isNotEmpty && Settings.I.isMuted(p);
+  }
+
+  // ---------- опросы, пересылка, GIF ----------
+
+  Future<Map<String, dynamic>> vote(String messageId, List<int> options) async {
+    try {
+      final res = await pb.send('/api/wc/vote', method: 'POST', body: {'message': messageId, 'options': options});
+      return Map<String, dynamic>.from(res as Map);
+    } catch (e) {
+      throw errorText(e, fallback: 'Голос не засчитался — возможно, сервер старый');
+    }
+  }
+
+  Future<int> forward(String messageId, List<String> chatIds) async {
+    try {
+      final res = await pb.send('/api/wc/forward', method: 'POST', body: {'message': messageId, 'chats': chatIds});
+      return (res is Map ? res['sent'] as int? : null) ?? 0;
+    } catch (e) {
+      throw errorText(e, fallback: 'Не получилось переслать — возможно, сервер старый');
+    }
+  }
+
+  /// Поиск GIF через сервер. null — поиск выключен на сервере.
+  Future<List<Map<String, dynamic>>?> searchGifs(String q, {int offset = 0}) async {
+    try {
+      final res = await pb.send('/api/wc/gifs', query: {'q': q, 'offset': offset});
+      if (res is! Map || res['enabled'] != true) return null;
+      if (res['error'] is String) throw res['error'] as String;
+      return [for (final i in (res['items'] as List? ?? const []).whereType<Map>()) Map<String, dynamic>.from(i)];
+    } on ClientException catch (e) {
+      if (e.statusCode == 404) return null; // старый сервер
+      throw errorText(e, fallback: 'GIF не загрузились');
+    }
   }
 
   String? otherMember(RecordModel chat) {

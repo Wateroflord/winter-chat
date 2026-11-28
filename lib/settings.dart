@@ -391,6 +391,34 @@ class Settings extends ChangeNotifier {
   /// Видео: сразу со звуком или без.
   bool get videoMuted => _b('set_video_muted', false);
   set videoMuted(bool v) => _setB('set_video_muted', v);
+
+  // ---------- рация и саундборд ----------
+
+  /// Рация (push-to-talk): микрофон работает, только пока держишь клавишу/кнопку.
+  bool get pttEnabled => _b('set_ptt', false);
+  set pttEnabled(bool v) => _setB('set_ptt', v);
+
+  /// Клавиша рации на ПК (id из pttKeys в ptt.dart).
+  String get pttKey => _p.getString('set_ptt_key') ?? 'mouse4';
+  set pttKey(String v) {
+    _p.setString('set_ptt_key', v);
+    notifyListeners();
+  }
+
+  /// Тихий щелчок, когда включаешь и выключаешь рацию.
+  bool get pttClick => _b('set_ptt_click', true);
+  set pttClick(bool v) => _setB('set_ptt_click', v);
+
+  /// Слышать звуки саундборда от друзей.
+  bool get soundboardOn => _b('set_sb_on', true);
+  set soundboardOn(bool v) => _setB('set_sb_on', v);
+
+  /// Громкость саундборда, 0–100.
+  int get soundboardVolume => (_p.getInt('set_sb_vol') ?? 70).clamp(0, 100);
+  set soundboardVolume(int v) {
+    _p.setInt('set_sb_vol', v.clamp(0, 100));
+    notifyListeners();
+  }
 }
 
 /// Настройки одного чата на этом устройстве.
