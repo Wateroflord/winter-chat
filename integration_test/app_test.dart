@@ -315,11 +315,11 @@ void main() {
     await shot(t, '06_call');
 
     // --- рация и саундборд ---
-    await t.tap(find.text('Рация'));
+    await t.tap(find.descendant(of: find.byType(CallScreen), matching: find.byIcon(Icons.settings_voice_outlined)));
     await waitUntil(t, () => Settings.I.pttEnabled && !CallController.I.micOn, what: 'рация: микрофон молчит');
     await waitFor(t, find.textContaining('Держи'), what: 'кнопка рации');
     await shot(t, '06a_ptt');
-    await t.tap(find.text('Звуки'));
+    await t.tap(find.descendant(of: find.byType(CallScreen), matching: find.byIcon(Icons.music_note_outlined)));
     await waitFor(t, find.text('Саундборд'), what: 'панель саундборда');
     await t.pump(const Duration(milliseconds: 600));
     await shot(t, '06b_soundboard');
