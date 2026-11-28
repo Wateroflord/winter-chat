@@ -161,7 +161,7 @@ class _ChatScreenState extends State<ChatScreen> {
 
   Future<void> _load() async {
     try {
-      final res = await _pb.collection('messages').getList(page: 1, perPage: 50, filter: _filter, sort: '-created', skipTotal: true, expand: 'reply_to,sticker');
+      final res = await _pb.collection('messages').getList(page: 1, perPage: 50, filter: _filter, sort: '-created', skipTotal: true, expand: Api.I.messageExpand);
       _msgs
         ..clear()
         ..addAll(res.items);
@@ -179,7 +179,7 @@ class _ChatScreenState extends State<ChatScreen> {
   Future<void> _fetchNewest() async {
     if (_loading) return;
     try {
-      final res = await _pb.collection('messages').getList(page: 1, perPage: 30, filter: _filter, sort: '-created', skipTotal: true, expand: 'reply_to,sticker');
+      final res = await _pb.collection('messages').getList(page: 1, perPage: 30, filter: _filter, sort: '-created', skipTotal: true, expand: Api.I.messageExpand);
       var changed = false;
       for (final m in res.items) {
         if (_upsert(m)) changed = true;
@@ -199,7 +199,7 @@ class _ChatScreenState extends State<ChatScreen> {
             filter: _pb.filter('chat = {:c} && created < {:t}', {'c': widget.chatId, 't': oldest}),
             sort: '-created',
             skipTotal: true,
-            expand: 'reply_to,sticker',
+            expand: Api.I.messageExpand,
           );
       _msgs.addAll(res.items.where((m) => !_msgs.any((x) => x.id == m.id)));
       _hasMore = res.items.length == 50;
@@ -222,7 +222,7 @@ class _ChatScreenState extends State<ChatScreen> {
           _upsert(r);
         }
         if (mounted) setState(() {});
-      }, filter: _filter, expand: 'reply_to,sticker');
+      }, filter: _filter, expand: Api.I.messageExpand);
     } catch (_) {}
   }
 

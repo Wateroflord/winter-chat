@@ -177,7 +177,7 @@ class _ChatList extends StatelessWidget {
           children: [
             Icon(Icons.ac_unit, color: W.ice, size: 20),
             const SizedBox(width: 8),
-            const Text('Winter Chat'),
+            const Flexible(child: Text('Winter Chat', maxLines: 1, overflow: TextOverflow.ellipsis)),
             if (!store.online) ...[
               const SizedBox(width: 10),
               Tooltip(

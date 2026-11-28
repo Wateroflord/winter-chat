@@ -33,6 +33,12 @@ class Api extends ChangeNotifier {
   final Map<String, RecordModel> users = {};
 
   PocketBase get pb => _pb!;
+
+  /// Сервер знает про каналы, опросы, стикеры (обновлён).
+  bool serverExtras = false;
+
+  /// Что подгружать вместе с сообщениями (старый сервер не знает про стикеры).
+  String get messageExpand => serverExtras ? 'reply_to,sticker' : 'reply_to';
   bool get hasClient => _pb != null;
   bool get loggedIn => _pb != null && _pb!.authStore.isValid && _pb!.authStore.record != null;
   RecordModel get me => _pb!.authStore.record!;
@@ -44,6 +50,7 @@ class Api extends ChangeNotifier {
     primaryUrl = prefs.getString('server_primary') ?? serverUrl;
     altUrls = prefs.getStringList('server_alts') ?? [];
     serverId = prefs.getString('server_id') ?? '';
+    serverExtras = prefs.getBool('server_extras') ?? false;
     if (serverUrl.isNotEmpty) _makeClient();
   }
 
@@ -118,6 +125,8 @@ class Api extends ChangeNotifier {
     }
     serverId = id;
     altUrls = alts;
+    serverExtras = j['extras'] == 1;
+    await prefs.setBool('server_extras', serverExtras);
     await prefs.setString('server_id', id);
     await prefs.setStringList('server_alts', alts);
   }

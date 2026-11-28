@@ -77,6 +77,13 @@ Future<bool> softWait(WidgetTester t, Finder f, {int seconds = 20}) async {
   return false;
 }
 
+/// Всплывающие подсказки внизу закрывают поле ввода — ждём, пока уйдут.
+Future<void> noToast(WidgetTester t) async {
+  ScaffoldMessenger.maybeOf(t.element(find.byType(Scaffold).first))?.clearSnackBars();
+  await waitUntil(t, () => find.byType(SnackBar).evaluate().isEmpty, seconds: 10, what: 'подсказка внизу закрылась');
+  await t.pump(const Duration(milliseconds: 300));
+}
+
 /// Всё из очереди отправки ушло на сервер.
 Future<void> allSent(WidgetTester t) => waitUntil(t, () => Outbox.I.items.isEmpty, what: 'отправка сообщения (${Outbox.I.items.map((i) => i.error).join(', ')})');
 
@@ -216,6 +223,7 @@ void main() {
     await t.pump(const Duration(milliseconds: 500));
 
     // --- оформление текста ---
+    await noToast(t);
     await t.enterText(composer, '**Жирный**, _курсив_ и ||спойлер|| для @bob');
     await t.pump(const Duration(milliseconds: 200));
     await t.tap(find.byIcon(Icons.send_rounded));
@@ -223,6 +231,7 @@ void main() {
     await waitFor(t, find.text('Жирный, курсив и спойлер для @bob'), what: 'сообщение с оформлением');
 
     // --- опрос ---
+    await noToast(t);
     await t.tap(find.byTooltip('Прикрепить'));
     await waitFor(t, find.text('Опрос'), what: 'меню вложений');
     await t.tap(find.text('Опрос'));
@@ -253,6 +262,7 @@ void main() {
     // --- свой стикер и вкладка GIF ---
     final png = await t.runAsync(stickerPng);
     await t.runAsync(() => StickerStore.I.upload(pack: 'Снежинки', name: 'snow.png', bytes: png!));
+    await noToast(t);
     await t.tap(find.byTooltip('Стикеры и GIF'));
     final stickerImg = find.descendant(of: find.byType(StickerPanel), matching: find.byType(Image));
     await waitFor(t, stickerImg, what: 'стикер в панели');
@@ -272,6 +282,7 @@ void main() {
     final voiceCh = await t.runAsync(() => Api.I.pb.collection('chats').create(body: {'name': 'Катка', 'is_group': true, 'parent': group.id, 'kind': 'voice', 'members': members}));
     Store.I.replaceChat(games!);
     Store.I.replaceChat(voiceCh!);
+    await noToast(t);
     await openMenu(t, inChat('Привет, Алиса!'), 'переслать');
     await t.tap(find.text('Переслать'));
     await waitFor(t, find.text('Банда › #игры'), what: 'канал в списке пересылки');

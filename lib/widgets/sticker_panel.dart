@@ -31,8 +31,14 @@ class StickerStore extends ChangeNotifier {
 
   static Uri urlOf(RecordModel st) => Api.I.pb.files.getURL(st, st.getStringValue('file'));
 
-  Future<void> load({bool force = false}) async {
-    if (!force && loaded && DateTime.now().difference(_at) < const Duration(minutes: 2)) return;
+  Future<void>? _inflight;
+
+  Future<void> load({bool force = false}) {
+    if (!force && loaded && DateTime.now().difference(_at) < const Duration(minutes: 2)) return Future.value();
+    return _inflight ??= _load().whenComplete(() => _inflight = null);
+  }
+
+  Future<void> _load() async {
     try {
       stickers = await Api.I.pb.collection('stickers').getFullList(sort: 'pack,created');
       loaded = true;

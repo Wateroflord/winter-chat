@@ -254,7 +254,7 @@ class Outbox extends ChangeNotifier {
           ...it.extra,
         },
         files: multipart,
-        expand: 'reply_to,sticker',
+        expand: Api.I.messageExpand,
       );
       items.remove(it);
       _save();

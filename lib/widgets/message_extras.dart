@@ -365,6 +365,14 @@ class StickerView extends StatelessWidget {
     final ex = message.expand['sticker'];
     if (ex != null && ex.isNotEmpty) st = ex.first;
     st ??= StickerStore.I.byId(id);
+    if (st == null && !StickerStore.I.loaded && !StickerStore.I.unsupported) {
+      // Стикеры ещё не загружены — подгрузим и перерисуем.
+      StickerStore.I.load();
+      return ListenableBuilder(
+        listenable: StickerStore.I,
+        builder: (_, __) => StickerStore.I.loaded ? StickerView(message: message, size: size) : SizedBox(width: size, height: size),
+      );
+    }
     if (st == null) {
       return Container(
         width: size,
